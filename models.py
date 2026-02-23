@@ -529,6 +529,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                     model=self.model_name,
                     messages=msgs_conv,
                     stream=stream,
+                    drop_params=True,
                     **call_kwargs,
                 )
 
