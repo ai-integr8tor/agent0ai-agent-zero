@@ -3,7 +3,7 @@ import {
   copyToClipboard,
 } from "/components/messages/action-buttons/simple-action-buttons.js";
 import { store as stepDetailStore } from "/components/modals/process-step-detail/step-detail-store.js";
-import { store as speechStore } from "/components/chat/speech/speech-store.js";
+import { ttsService } from "/js/tts-service.js";
 import { store as browserStore } from "/plugins/_browser/webui/browser-store.js";
 import { getNamespacedClient } from "/js/websocket.js";
 import { open as openSurface } from "/js/surfaces.js";
@@ -512,7 +512,7 @@ function drawBrowserTool({
           buildDetailPayload(args, { headerLabels }),
         ),
       ),
-      createActionButton("speak", "", () => speechStore.speak(contentText)),
+      createActionButton("speak", "", () => ttsService.speak(contentText)),
       createActionButton("copy", "", () => copyToClipboard(contentText)),
     );
   }

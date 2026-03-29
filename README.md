@@ -203,7 +203,7 @@ Agent Zero supports plugins, MCP, A2A, custom tools, custom prompts, project-sco
 
 - Fully Dockerized runtime with a clean Web UI.
 - Real-time streamed output so you can interrupt, redirect, or refine the work as it happens.
-- Speech-to-text and text-to-speech support.
+- Speech-to-text and text-to-speech support through the built-in `_kokoro_tts` and `_whisper_stt` plugins, with browser-native speech synthesis as the fallback output path.
 - Chat load/save, generated HTML logs, file browser, settings UI, and deployment-friendly `A0_SET_` configuration.
 
 ## Try These First
