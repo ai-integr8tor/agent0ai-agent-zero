@@ -7,10 +7,11 @@
 ### Response format (json fields names)
 - thoughts: array thoughts before execution in natural language
 - headline: short headline summary of the response
-- tool_name: use tool name
-- tool_args: key value pairs tool arguments
+- tool_name: use tool name  ← ALWAYS REQUIRED
+- tool_args: key value pairs tool arguments  ← ALWAYS REQUIRED
 
 - No text output before or after the JSON object
+- **CRITICAL: Every response MUST contain both "tool_name" and "tool_args" fields. Never output JSON without them.**
 
 ### Response example
 ~~~json
