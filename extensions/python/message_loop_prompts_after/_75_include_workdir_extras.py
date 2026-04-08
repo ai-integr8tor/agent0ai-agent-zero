@@ -24,13 +24,13 @@ class IncludeWorkdirExtras(Extension):
 
         if project_name:
             project = projects.load_basic_project_data(project_name)
-            enabled = project["file_structure"]["enabled"]
+            enabled = project["file_structure"].get("enabled", False)
             
             if not enabled:
                 return
             
-            max_depth = project["file_structure"]["max_depth"]
-            gitignore_raw = project["file_structure"]["gitignore"]
+            max_depth = project["file_structure"].get("max_depth", 0)
+            gitignore_raw = project["file_structure"].get("gitignore", "")
 
             folder = projects.get_project_folder(project_name)
             if runtime.is_development():
