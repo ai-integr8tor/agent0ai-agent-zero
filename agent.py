@@ -981,18 +981,36 @@ class Agent:
     @extension.extensible
     async def validate_tool_request(self, tool_request: Any):
         if not isinstance(tool_request, dict):
-            raise RepairableException("Tool request must be a dictionary")
+            received_type = type(tool_request).__name__
+            raise RepairableException(
+                f"Tool request must be a dictionary (JSON object). Received: {received_type}. "
+                "Please ensure your tool call is wrapped in a valid JSON object. "
+                "Example: {'tool_name': 'terminal', 'tool_args': {'command': 'ls'}}"
+            )
 
         # Support aliases 'tool_name' and 'tool'
         tool_name = tool_request.get("tool_name", tool_request.get("tool"))
         if not tool_name or not isinstance(tool_name, str):
-            raise RepairableException("Tool request must have a 'tool_name' (type string) field")
+            received_keys = list(tool_request.keys())
+            raise RepairableException(
+                f"Tool request is missing a 'tool_name' or 'tool' string field. "
+                "Both are supported, but one is required. "
+                f"Received keys: {received_keys}. "
+                "Correct format: {'tool_name': 'terminal', 'tool_args': {'command': 'ls'}} "
+                "OR {'tool': 'python', 'args': {'code': 'print(1)'}}"
+            )
 
         # Support aliases 'tool_args' and 'args'
         tool_args = tool_request.get("tool_args", tool_request.get("args"))
         # Allow missing args (None) or empty dict, but if present must be a dict
         if tool_args is not None and not isinstance(tool_args, dict):
-             raise RepairableException("Tool request 'tool_args' field must be a dictionary")
+             received_type = type(tool_args).__name__
+             raise RepairableException(
+                 f"The 'tool_args' (or 'args') field must be a dictionary of parameters. "
+                 f"Received: {received_type}. "
+                 "Correct format: {'tool_name': 'terminal', 'tool_args': {'command': 'ls'}} "
+                 "OR {'tool': 'python', 'args': {'code': 'print(1)'}}"
+             )
 
 
 
