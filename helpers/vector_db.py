@@ -41,11 +41,9 @@ class VectorDB:
         model = agent.get_embedding_model()
         if not cache:
             return model  # return raw embeddings if cache is False
-        namespace = getattr(
-            model,
-            "model_name",
-            "default",
-        )
+        model_name = getattr(model, "model_name", "default")
+        api_base = getattr(model, "kwargs", {}).get("api_base", "")
+        namespace = f"{model_name}:{api_base}" if api_base else model_name
         if namespace not in VectorDB._cached_embeddings:
             store = InMemoryByteStore()
             VectorDB._cached_embeddings[namespace] = (

@@ -52,6 +52,7 @@ class ModelConfigSet(ApiHandler):
         if (
             prev_embed.get("provider") != new_embed.get("provider")
             or prev_embed.get("name") != new_embed.get("name")
+            or prev_embed.get("api_base") != new_embed.get("api_base")
             or prev_embed.get("kwargs") != new_embed.get("kwargs")
         ):
             defer.DeferredTask().start_task(
