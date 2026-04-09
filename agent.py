@@ -592,43 +592,49 @@ class Agent:
 
     @extension.extensible
     async def handle_exception(self, location: str, exception: Exception):
-        if exception:
-            raise exception # exception handling is done by extensions
+        if not exception:
+            return
 
-        # exception_data = {"exception": exception}
-        # await self.call_extensions(
-        #     "message_loop_exception", exception_data=exception_data
-        # )
+        if isinstance(exception, errors.HandledException):
+            raise exception
+        elif isinstance(exception, asyncio.CancelledError):
+            PrintStyle(font_color="white", background_color="red", padding=True).print(
+                f"Context {self.context.id} terminated during message loop"
+            )
+            raise errors.HandledException(exception)
+        elif isinstance(exception, errors.InterventionException):
+            # Intervention exceptions just skip the rest of the message loop iteration
+            return
+        elif isinstance(exception, errors.RepairableException):
+            # Repairable exceptions should be caught and added to chat history
+            # so the model can fix its mistake.
+            error_msg = str(exception)
+            PrintStyle(font_color="yellow", padding=True).print(f"Repairable Error: {error_msg}")
+            
+            # Create a log entry and warning message
+            wmsg = self.hist_add_warning(error_msg)
+            self.context.log.log(
+                type="warning",
+                content=f"{self.agent_name}: {error_msg}",
+                id=wmsg.id
+            )
+            return
 
-        # # If extensions cleared the exception, continue.
-        # if not exception_data.get("exception"):
-        #     return
+        else:
+            error_text = errors.error_text(exception)
+            error_message = errors.format_error(exception)
 
-        # # Backwards-compatible fallback (should normally be handled by _90 extension).
-        # exception = exception_data["exception"]
-        # if isinstance(exception, HandledException):
-        #     raise exception
-        # elif isinstance(exception, asyncio.CancelledError):
-        #     PrintStyle(font_color="white", background_color="red", padding=True).print(
-        #         f"Context {self.context.id} terminated during message loop"
-        #     )
-        #     raise HandledException(exception)
+            # Mask secrets in error messages
+            PrintStyle(font_color="red", padding=True).print(error_message)
+            self.context.log.log(
+                type="error",
+                content=error_message,
+            )
+            PrintStyle(font_color="red", padding=True).print(
+                f"{self.agent_name}: {error_text}"
+            )
 
-        # else:
-        #     error_text = errors.error_text(exception)
-        #     error_message = errors.format_error(exception)
-
-        #     # Mask secrets in error messages
-        #     PrintStyle(font_color="red", padding=True).print(error_message)
-        #     self.context.log.log(
-        #         type="error",
-        #         content=error_message,
-        #     )
-        #     PrintStyle(font_color="red", padding=True).print(
-        #         f"{self.agent_name}: {error_text}"
-        #     )
-
-        #     raise HandledException(exception)  # Re-raise the exception to kill the loop
+            raise errors.HandledException(exception)  # Re-raise the exception to kill the loop
 
     @extension.extensible
     async def get_system_prompt(self, loop_data: LoopData) -> list[str]:
@@ -975,11 +981,18 @@ class Agent:
     @extension.extensible
     async def validate_tool_request(self, tool_request: Any):
         if not isinstance(tool_request, dict):
-            raise ValueError("Tool request must be a dictionary")
-        if not tool_request.get("tool_name") or not isinstance(tool_request.get("tool_name"), str):
-            raise ValueError("Tool request must have a tool_name (type string) field")
-        if not tool_request.get("tool_args") or not isinstance(tool_request.get("tool_args"), dict):
-            raise ValueError("Tool request must have a tool_args (type dictionary) field")
+            raise RepairableException("Tool request must be a dictionary")
+
+        # Support aliases 'tool_name' and 'tool'
+        tool_name = tool_request.get("tool_name", tool_request.get("tool"))
+        if not tool_name or not isinstance(tool_name, str):
+            raise RepairableException("Tool request must have a 'tool_name' (type string) field")
+
+        # Support aliases 'tool_args' and 'args'
+        tool_args = tool_request.get("tool_args", tool_request.get("args"))
+        # Allow missing args (None) or empty dict, but if present must be a dict
+        if tool_args is not None and not isinstance(tool_args, dict):
+             raise RepairableException("Tool request 'tool_args' field must be a dictionary")
 
 
 
