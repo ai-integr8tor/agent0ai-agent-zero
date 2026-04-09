@@ -13,6 +13,16 @@ def json_parse_dirty(json: str) -> dict[str, Any] | None:
         try:
             data = DirtyJson.parse_string(ext_json)
             if isinstance(data, dict):
+                # Normalize: if it looks like a tool request, ensure required fields exist
+                if "tool_name" in data or "tool" in data:
+                    # Normalize tool_name (some models use "tool" instead of "tool_name")
+                    if "tool" in data and "tool_name" not in data:
+                        data["tool_name"] = data.pop("tool")
+                    # Normalize tool_args — default to empty dict if missing or not a dict
+                    if "tool_args" not in data:
+                        data["tool_args"] = data.get("args", {})
+                    if not isinstance(data.get("tool_args"), dict):
+                        data["tool_args"] = {}
                 return data
         except Exception:
             # If parsing fails, return None instead of crashing
