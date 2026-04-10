@@ -388,6 +388,7 @@ class Agent:
                     self.context.streaming_agent = self  # mark self as current streamer
                     self.loop_data.iteration += 1
                     self.loop_data.params_temporary = {}  # clear temporary params
+                    last_response_stream_full = ""
 
                     # call message_loop_start extensions
                     await extension.call_extensions_async(
@@ -425,12 +426,39 @@ class Agent:
                             await self.handle_reasoning_stream(stream_data["full"])
 
                         async def stream_callback(chunk: str, full: str):
+                            nonlocal last_response_stream_full
                             await self.handle_intervention()
                             # output the agent response stream
                             if chunk == full:
                                 printer.print("Response: ")  # start of response
                             # Pass chunk and full data to extensions for processing
                             stream_data = {"chunk": chunk, "full": full}
+                            stop_response: str | None = None
+
+                            # wgnr.ai FIX: Only attempt JSON parse when stream
+                            # might contain a complete JSON root (ends with } or ]).
+                            # This eliminates O(n²) per-chunk DirtyJson overhead that
+                            # causes event loop starvation with multiple chat sessions.
+                            stripped = full.rstrip()
+                            snapshot = None
+                            if stripped and stripped[-1] in ('}', ']'):
+                                snapshot = extract_tools.extract_json_root_string(full)
+                            if snapshot:
+                                parsed_snapshot = extract_tools.json_parse_dirty(snapshot)
+                                if parsed_snapshot is not None:
+                                    try:
+                                        await self.validate_tool_request(parsed_snapshot)
+                                    except Exception:
+                                        pass
+                                    else:
+                                        previous_full = last_response_stream_full
+                                        stream_data["full"] = snapshot
+                                        if snapshot.startswith(previous_full):
+                                            stream_data["chunk"] = snapshot[len(previous_full) :]
+                                        else:
+                                            stream_data["chunk"] = snapshot
+                                        stop_response = snapshot
+
                             await extension.call_extensions_async(
                                 "response_stream_chunk",
                                 self,
@@ -442,6 +470,9 @@ class Agent:
                                 printer.stream(stream_data["chunk"])
                             # Use the potentially modified full text for downstream processing
                             await self.handle_response_stream(stream_data["full"])
+                            last_response_stream_full = stream_data["full"]
+                            if stop_response is not None:
+                                return stop_response
 
                         # call main LLM
                         agent_response, _reasoning = await self.call_chat_model(
@@ -770,7 +801,7 @@ class Agent:
     async def call_chat_model(
         self,
         messages: list[BaseMessage],
-        response_callback: Callable[[str, str], Awaitable[None]] | None = None,
+        response_callback: Callable[[str, str], Awaitable[str | None]] | None = None,
         reasoning_callback: Callable[[str, str], Awaitable[None]] | None = None,
         background: bool = False,
         explicit_caching: bool = True,
@@ -954,7 +985,7 @@ class Agent:
             raise ValueError("Tool request must be a dictionary")
         if not tool_request.get("tool_name") or not isinstance(tool_request.get("tool_name"), str):
             raise ValueError("Tool request must have a tool_name (type string) field")
-        if not tool_request.get("tool_args") or not isinstance(tool_request.get("tool_args"), dict):
+        if "tool_args" not in tool_request or not isinstance(tool_request.get("tool_args"), dict):
             raise ValueError("Tool request must have a tool_args (type dictionary) field")
 
 
