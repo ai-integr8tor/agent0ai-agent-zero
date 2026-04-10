@@ -27,4 +27,12 @@ class RecallWait(Extension):
                     return
 
             # otherwise await the task
-            await task
+            import asyncio
+            try:
+                await task
+            except TimeoutError:
+                self.agent.context.log.log(type="warning", heading="Memory recall timed out after 30 seconds.")
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                self.agent.context.log.log(type="warning", heading=f"Memory recall failed: {e}")
