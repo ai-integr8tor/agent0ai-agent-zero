@@ -9,7 +9,6 @@ class DiscoveryCardsExtension(Extension):
         # Telegram, Email, Whatsapp are built-in, so we only need to check if they've been configured.
         
         telegram_config = plugins.get_plugin_config("_telegram_integration") or {}
-        email_config = plugins.get_plugin_config("_email_integration") or {}
         whatsapp_config = plugins.get_plugin_config("_whatsapp_integration") or {}
 
         # 1. Plugin Hub Hero
@@ -44,20 +43,19 @@ class DiscoveryCardsExtension(Extension):
             })
 
         # 3. Email
-        if not email_config.get("imap_username") and not email_config.get("smtp_username"):
-            banners.append({
-                "id": "discovery-email",
-                "type": "feature",
-                "title": "Setup Email",
-                "description": "Let Agent Zero read and send emails on your behalf.",
-                "thumbnail": "/plugins/_discovery/webui/assets/thumb-email.png",
-                "icon": "mail",
-                "cta_text": "Setup",
-                "cta_action": "open-plugin-config:_email_integration",
-                "dismissible": True,
-                "priority": 50,
-                "show_in_onboarding": True
-            })
+        banners.append({
+            "id": "discovery-email",
+            "type": "feature",
+            "title": "Setup Email",
+            "description": "Connect an inbox, test it, or fine-tune how Agent Zero replies.",
+            "thumbnail": "/plugins/_discovery/webui/assets/thumb-email.png",
+            "icon": "mail",
+            "cta_text": "Open Setup",
+            "cta_action": "open-plugin-config:_email_integration",
+            "dismissible": True,
+            "priority": 50,
+            "show_in_onboarding": True
+        })
 
         # 4. WhatsApp
         if not whatsapp_config.get("phone_number_id"):
@@ -74,4 +72,3 @@ class DiscoveryCardsExtension(Extension):
                 "priority": 50,
                 "show_in_onboarding": True
             })
-
