@@ -305,7 +305,13 @@ class WsManager:
             return await coro
 
         future = asyncio.run_coroutine_threadsafe(coro, dispatcher_loop)
-        return await asyncio.wrap_future(future)
+        # wgnr.ai FIX: Add timeout to prevent indefinite blocking when main loop is busy.
+        # This prevents a stalled main event loop from blocking all chat emit operations.
+        try:
+            return await asyncio.wait_for(asyncio.wrap_future(future), timeout=10.0)
+        except asyncio.TimeoutError:
+            future.cancel()
+            raise RuntimeError("Dispatcher loop emit timed out after 10s")
 
     def _diagnostics_active(self) -> bool:
         if not self._diagnostics_enabled:
@@ -694,8 +700,22 @@ class WsManager:
         instrument = self._diagnostics_active()
         start = time.perf_counter() if instrument else None
         try:
-            value = await self._get_handler_worker().execute_inside(
-                handler.process, event_type, payload, sid
+            # wgnr.ai FIX: Add timeout to handler execution to prevent
+            # a single stalled handler from blocking all event processing.
+            value = await asyncio.wait_for(
+                self._get_handler_worker().execute_inside(
+                    handler.process, event_type, payload, sid
+                ),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            duration_ms = (
+                (time.perf_counter() - start) * 1000 if start is not None else None
+            )
+            return _HandlerExecution(
+                handler,
+                RuntimeError(f"Handler {handler.identifier} timed out after 60s"),
+                duration_ms,
             )
         except Exception as exc:  # pragma: no cover - handled by caller
             duration_ms = (
@@ -1275,6 +1295,24 @@ class WsManager:
                     "payloadSummary": self._summarize_payload(data),
                 }
             )
+    async def _emit_fire_and_forget(
+        self,
+        namespace: str,
+        sid: str,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> None:
+        """Emit without blocking - for high-frequency streaming events.
+
+        wgnr.ai FIX: Bypasses the dispatcher loop bridge entirely to avoid
+        timeout/blocking during active streaming when multiple chats compete
+        for the main event loop.
+        """
+        try:
+            self.socketio.emit(event_type, data, to=sid, namespace=namespace)
+        except Exception:
+            pass  # Best effort for streaming
+
 
     async def send_data(
         self,
