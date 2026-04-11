@@ -978,10 +978,9 @@ class Agent:
             raise ValueError("Tool request must be a dictionary")
         if not tool_request.get("tool_name") or not isinstance(tool_request.get("tool_name"), str):
             raise ValueError("Tool request must have a tool_name (type string) field")
-        if "tool_args" not in tool_request or not isinstance(tool_request.get("tool_args"), dict):
+        tool_args_value = tool_request.get("tool_args", tool_request.get("args"))
+        if tool_args_value is not None and not isinstance(tool_args_value, dict):
             raise ValueError("Tool request must have a tool_args (type dictionary) field")
-
-
 
     async def handle_reasoning_stream(self, stream: str):
         await self.handle_intervention()
