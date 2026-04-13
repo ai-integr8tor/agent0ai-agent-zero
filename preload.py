@@ -22,8 +22,9 @@ async def preload():
                 from plugins._model_config.helpers.model_config import get_embedding_model_config_object
                 emb_cfg = get_embedding_model_config_object()
                 if emb_cfg.provider.lower() == "huggingface":
+                    emb_kwargs = getattr(emb_cfg, "kwargs", {}) or {}
                     emb_mod = models.get_embedding_model(
-                        "huggingface", emb_cfg.name
+                        "huggingface", emb_cfg.name, **emb_kwargs
                     )
                     emb_txt = await emb_mod.aembed_query("test")
                     return emb_txt
