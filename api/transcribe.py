@@ -1,18 +1,24 @@
 from helpers.api import ApiHandler, Request, Response
 
-from helpers import runtime, settings, whisper
+from helpers import settings, whisper
 
 class Transcribe(ApiHandler):
-    async def process(self, input: dict, request: Request) -> dict | Response:
-        audio = input.get("audio")
-        ctxid = input.get("ctxid", "")
+    async def process(self, payload: dict, _request: Request) -> dict | Response:
+        audio = payload.get("audio")
+        ctxid = payload.get("ctxid", "")
+
+        if not audio:
+            return Response("Missing 'audio'.", 400)
 
         if ctxid:
-            context = self.use_context(ctxid)
+            self.use_context(ctxid)
 
         # if not await whisper.is_downloaded():
         #     context.log.log(type="info", content="Whisper STT model is currently being initialized, please wait...")
 
-        set = settings.get_settings()
-        result = await whisper.transcribe(set["stt_model_size"], audio) # type: ignore
-        return result
+        try:
+            settings_data = settings.get_settings()
+            result = await whisper.transcribe(settings_data["stt_model_size"], audio) # type: ignore
+            return result
+        except Exception as e:
+            return Response(str(e), 500)

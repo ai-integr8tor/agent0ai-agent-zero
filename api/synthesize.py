@@ -2,15 +2,18 @@
 
 from helpers.api import ApiHandler, Request, Response
 
-from helpers import runtime, settings, kokoro_tts
+from helpers import kokoro_tts
 
 class Synthesize(ApiHandler):
-    async def process(self, input: dict, request: Request) -> dict | Response:
-        text = input.get("text", "")
-        ctxid = input.get("ctxid", "")
+    async def process(self, payload: dict, _request: Request) -> dict | Response:
+        text = payload.get("text", "")
+        ctxid = payload.get("ctxid", "")
+
+        if not text:
+            return Response("Missing 'text'.", 400)
         
         if ctxid:
-            context = self.use_context(ctxid)
+            self.use_context(ctxid)
 
         # if not await kokoro_tts.is_downloaded():
         #     context.log.log(type="info", content="Kokoro TTS model is currently being initialized, please wait...")
@@ -36,7 +39,7 @@ class Synthesize(ApiHandler):
             audio = await kokoro_tts.synthesize_sentences([text])
             return {"audio": audio, "success": True}
         except Exception as e:
-            return {"error": str(e), "success": False}
+            return Response(str(e), 500)
     
     # def _clean_text(self, text: str) -> str:
     #     """Clean text by removing markdown, tables, code blocks, and other formatting"""
