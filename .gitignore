@@ -50,3 +50,10 @@ agent_history.gif
 
 .agent/**
 .claude/**
+
+# Local runtime dirs
+.claw/
+.omc/
+.sisyphus/
+data/
+docker_mcp_config*.json
