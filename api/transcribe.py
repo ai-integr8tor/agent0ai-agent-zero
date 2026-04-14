@@ -13,9 +13,6 @@ class Transcribe(ApiHandler):
         if ctxid:
             self.use_context(ctxid)
 
-        # if not await whisper.is_downloaded():
-        #     context.log.log(type="info", content="Whisper STT model is currently being initialized, please wait...")
-
         try:
             settings_data = settings.get_settings()
             result = await whisper.transcribe(settings_data["stt_model_size"], audio) # type: ignore

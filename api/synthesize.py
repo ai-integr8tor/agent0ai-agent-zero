@@ -15,9 +15,6 @@ class Synthesize(ApiHandler):
         if ctxid:
             self.use_context(ctxid)
 
-        # if not await kokoro_tts.is_downloaded():
-        #     context.log.log(type="info", content="Kokoro TTS model is currently being initialized, please wait...")
-
         try:
             # # Clean and chunk text for long responses
             # cleaned_text = self._clean_text(text)
