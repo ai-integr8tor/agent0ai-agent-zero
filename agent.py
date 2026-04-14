@@ -33,6 +33,7 @@ from helpers.localization import Localization
 from helpers import extension
 from helpers.errors import RepairableException, InterventionException, HandledException
 
+
 class AgentContextType(Enum):
     USER = "user"
     TASK = "task"
@@ -40,7 +41,6 @@ class AgentContextType(Enum):
 
 
 class AgentContext:
-
     _contexts: dict[str, "AgentContext"] = {}
     _contexts_lock = threading.RLock()
     _counter: int = 0
@@ -237,7 +237,9 @@ class AgentContext:
     def nudge(self):
         self.kill_process()
         self.paused = False
-        self.task = self.communicate(UserMessage(self.agent0.read_prompt("fw.msg_nudge.md")))
+        self.task = self.communicate(
+            UserMessage(self.agent0.read_prompt("fw.msg_nudge.md"))
+        )
         return self.task
 
     @extension.extensible
@@ -286,7 +288,8 @@ class AgentContext:
                 agent.hist_add_user_message(msg)  # type: ignore
                 if user
                 else agent.hist_add_tool_result(
-                    tool_name="call_subordinate", tool_result=msg  # type: ignore
+                    tool_name="call_subordinate",
+                    tool_result=msg,  # type: ignore
                 )
             )
             response = await agent.monologue()  # type: ignore
@@ -295,7 +298,9 @@ class AgentContext:
                 response = await self._process_chain(superior, response, False)  # type: ignore
 
             # call end of process extensions
-            await extension.call_extensions_async("process_chain_end", agent=self.get_agent(), data={})
+            await extension.call_extensions_async(
+                "process_chain_end", agent=self.get_agent(), data={}
+            )
 
             return response
         except Exception as e:
@@ -304,7 +309,7 @@ class AgentContext:
     @extension.extensible
     async def handle_exception(self, location: str, exception: Exception):
         if exception:
-            raise exception # exception handling is done by extensions
+            raise exception  # exception handling is done by extensions
 
 
 @dataclass
@@ -342,7 +347,6 @@ class LoopData:
 
 
 class Agent:
-
     DATA_NAME_SUPERIOR = "_superior"
     DATA_NAME_SUBORDINATE = "_subordinate"
     DATA_NAME_CTX_WINDOW = "ctx_window"
@@ -384,7 +388,6 @@ class Agent:
 
                 # let the agent run message loop until he stops it with a response tool
                 while True:
-
                     self.context.streaming_agent = self  # mark self as current streamer
                     self.loop_data.iteration += 1
                     self.loop_data.params_temporary = {}  # clear temporary params
@@ -405,7 +408,6 @@ class Agent:
                             "before_main_llm_call", self, loop_data=self.loop_data
                         )
                         await self.handle_intervention()
-
 
                         async def reasoning_callback(chunk: str, full: str):
                             await self.handle_intervention()
@@ -437,17 +439,23 @@ class Agent:
 
                             snapshot = extract_tools.extract_json_root_string(full)
                             if snapshot:
-                                parsed_snapshot = extract_tools.json_parse_dirty(snapshot)
+                                parsed_snapshot = extract_tools.json_parse_dirty(
+                                    snapshot
+                                )
                                 if parsed_snapshot is not None:
                                     try:
-                                        await self.validate_tool_request(parsed_snapshot)
+                                        await self.validate_tool_request(
+                                            parsed_snapshot
+                                        )
                                     except Exception:
                                         pass
                                     else:
                                         previous_full = last_response_stream_full
                                         stream_data["full"] = snapshot
                                         if snapshot.startswith(previous_full):
-                                            stream_data["chunk"] = snapshot[len(previous_full) :]
+                                            stream_data["chunk"] = snapshot[
+                                                len(previous_full) :
+                                            ]
                                         else:
                                             stream_data["chunk"] = snapshot
                                         stop_response = snapshot
@@ -491,20 +499,30 @@ class Agent:
                             self.loop_data.last_response == agent_response
                         ):  # if assistant_response is the same as last message in history, let him know
                             # Append the assistant's response to the history
-                            log_item = self.loop_data.params_temporary.get("log_item_generating")
-                            self.hist_add_ai_response(agent_response, id=log_item.id if log_item else "")
+                            log_item = self.loop_data.params_temporary.get(
+                                "log_item_generating"
+                            )
+                            self.hist_add_ai_response(
+                                agent_response, id=log_item.id if log_item else ""
+                            )
                             # Append warning message to the history
                             warning_msg = self.read_prompt("fw.msg_repeat.md")
                             wmsg = self.hist_add_warning(message=warning_msg)
                             PrintStyle(font_color="orange", padding=True).print(
                                 warning_msg
                             )
-                            self.context.log.log(type="warning", content=warning_msg, id=wmsg.id)
+                            self.context.log.log(
+                                type="warning", content=warning_msg, id=wmsg.id
+                            )
 
                         else:  # otherwise proceed with tool
                             # Append the assistant's response to the history
-                            log_item = self.loop_data.params_temporary.get("log_item_generating")
-                            self.hist_add_ai_response(agent_response, id=log_item.id if log_item else "")
+                            log_item = self.loop_data.params_temporary.get(
+                                "log_item_generating"
+                            )
+                            self.hist_add_ai_response(
+                                agent_response, id=log_item.id if log_item else ""
+                            )
                             # process tools requested in agent message
                             tools_result = await self.process_tools(agent_response)
                             if tools_result:  # final response of message loop available
@@ -516,12 +534,12 @@ class Agent:
 
                     finally:
                         # call message_loop_end extensions
-                        if self.context.task and self.context.task.is_alive(): # don't call extensions post mortem
+                        if (
+                            self.context.task and self.context.task.is_alive()
+                        ):  # don't call extensions post mortem
                             await extension.call_extensions_async(
                                 "message_loop_end", self, loop_data=self.loop_data
                             )
-
-
 
             # exceptions outside message loop:
             except Exception as e:
@@ -529,7 +547,9 @@ class Agent:
             finally:
                 self.context.streaming_agent = None  # unset current streamer
                 # call monologue_end extensions
-                if self.context.task and self.context.task.is_alive(): # don't call extensions post mortem
+                if (
+                    self.context.task and self.context.task.is_alive()
+                ):  # don't call extensions post mortem
                     await extension.call_extensions_async(
                         "monologue_end", self, loop_data=self.loop_data
                     )  # type: ignore
@@ -593,7 +613,7 @@ class Agent:
     @extension.extensible
     async def handle_exception(self, location: str, exception: Exception):
         if exception:
-            raise exception # exception handling is done by extensions
+            raise exception  # exception handling is done by extensions
 
         # exception_data = {"exception": exception}
         # await self.call_extensions(
@@ -779,9 +799,7 @@ class Agent:
             system_message=call_data["system"],
             user_message=call_data["message"],
             response_callback=stream_callback if call_data["callback"] else None,
-            rate_limiter_callback=(
-                self.rate_limiter_callback if not call_data["background"] else None
-            ),
+            rate_limiter_callback=self.rate_limiter_callback,
         )
 
         await extension.call_extensions_async(
@@ -822,14 +840,16 @@ class Agent:
             messages=call_data["messages"],
             reasoning_callback=call_data["reasoning_callback"],
             response_callback=call_data["response_callback"],
-            rate_limiter_callback=(
-                self.rate_limiter_callback if not call_data["background"] else None
-            ),
+            rate_limiter_callback=self.rate_limiter_callback,
             explicit_caching=call_data["explicit_caching"],
         )
 
         await extension.call_extensions_async(
-            "chat_model_call_after", self, call_data=call_data, response=response, reasoning=reasoning
+            "chat_model_call_after",
+            self,
+            call_data=call_data,
+            response=response,
+            reasoning=reasoning,
         )
 
         return response, reasoning
@@ -875,10 +895,15 @@ class Agent:
         # Only validate when extraction produced an object; None means no JSON tool
         # block was found — the misformat warning path below handles that.
         if tool_request is not None:
-            await self.validate_tool_request(tool_request)
+            try:
+                await self.validate_tool_request(tool_request)
+            except ValueError:
+                tool_request = None
 
         if tool_request is not None:
-            raw_tool_name = tool_request.get("tool_name", tool_request.get("tool",""))  # Get the raw tool name
+            raw_tool_name = tool_request.get(
+                "tool_name", tool_request.get("tool", "")
+            )  # Get the raw tool name
             tool_args = tool_request.get("tool_args", tool_request.get("args", {}))
 
             tool_name = raw_tool_name  # Initialize tool_name with raw_tool_name
@@ -960,7 +985,9 @@ class Agent:
                 wmsg = self.hist_add_warning(error_detail)
                 PrintStyle(font_color="red", padding=True).print(error_detail)
                 self.context.log.log(
-                    type="warning", content=f"{self.agent_name}: {error_detail}", id=wmsg.id
+                    type="warning",
+                    content=f"{self.agent_name}: {error_detail}",
+                    id=wmsg.id,
                 )
         else:
             warning_msg_misformat = self.read_prompt("fw.msg_misformat.md")
@@ -976,12 +1003,15 @@ class Agent:
     async def validate_tool_request(self, tool_request: Any):
         if not isinstance(tool_request, dict):
             raise ValueError("Tool request must be a dictionary")
-        if not tool_request.get("tool_name") or not isinstance(tool_request.get("tool_name"), str):
+        if not tool_request.get("tool_name") or not isinstance(
+            tool_request.get("tool_name"), str
+        ):
             raise ValueError("Tool request must have a tool_name (type string) field")
-        if "tool_args" not in tool_request or not isinstance(tool_request.get("tool_args"), dict):
-            raise ValueError("Tool request must have a tool_args (type dictionary) field")
-
-
+        tool_args_value = tool_request.get("tool_args", tool_request.get("args"))
+        if tool_args_value is not None and not isinstance(tool_args_value, dict):
+            raise ValueError(
+                "Tool request must have a tool_args (type dictionary) field"
+            )
 
     async def handle_reasoning_stream(self, stream: str):
         await self.handle_intervention()

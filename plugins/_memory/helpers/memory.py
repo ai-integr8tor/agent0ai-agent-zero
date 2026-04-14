@@ -42,7 +42,11 @@ class MyFaiss(FAISS):
     # override aget_by_ids
     def get_by_ids(self, ids: Sequence[str], /) -> List[Document]:
         # return all self.docstore._dict[id] in ids
-        return [self.docstore._dict[id] for id in (ids if isinstance(ids, list) else [ids]) if id in self.docstore._dict]  # type: ignore
+        return [
+            self.docstore._dict[id]
+            for id in (ids if isinstance(ids, list) else [ids])
+            if id in self.docstore._dict
+        ]  # type: ignore
 
     async def aget_by_ids(self, ids: Sequence[str], /) -> List[Document]:
         return self.get_by_ids(ids)
@@ -52,7 +56,6 @@ class MyFaiss(FAISS):
 
 
 class Memory:
-
     class Area(Enum):
         MAIN = "main"
         FRAGMENTS = "fragments"
@@ -62,7 +65,10 @@ class Memory:
 
     @staticmethod
     def _get_embedding_config(agent=None):
-        from plugins._model_config.helpers.model_config import get_embedding_model_config_object
+        from plugins._model_config.helpers.model_config import (
+            get_embedding_model_config_object,
+        )
+
         return get_embedding_model_config_object(agent)
 
     @staticmethod
@@ -342,13 +348,21 @@ class Memory:
     ):
         comparator = Memory._get_comparator(filter) if filter else None
 
-        return await self.db.asearch(
-            query,
-            search_type="similarity_score_threshold",
-            k=limit,
-            score_threshold=threshold,
-            filter=comparator,
-        )
+        try:
+            return await self.db.asearch(
+                query,
+                search_type="similarity_score_threshold",
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
+        except Exception as e:
+            logging.warning(
+                "Memory search failed (embedding error) — returning empty results: %s: %s",
+                type(e).__name__,
+                str(e)[:200],
+            )
+            return []
 
     async def search_similarity_threshold_with_scores(
         self, query: str, limit: int, threshold: float, filter: str = ""
@@ -463,7 +477,9 @@ class Memory:
             with open(hash_path, "w") as f:
                 f.write(h.hexdigest())
         except Exception as e:
-            PrintStyle(font_color="yellow").print(f"Warning: could not write FAISS hash: {e}")
+            PrintStyle(font_color="yellow").print(
+                f"Warning: could not write FAISS hash: {e}"
+            )
 
     @staticmethod
     def _verify_index_hash(abs_dir: str) -> bool:
@@ -480,14 +496,14 @@ class Memory:
                     h.update(chunk)
             return h.hexdigest() == stored
         except Exception as e:
-            PrintStyle(font_color="yellow").print(f"Warning: FAISS hash check failed: {e}")
+            PrintStyle(font_color="yellow").print(
+                f"Warning: FAISS hash check failed: {e}"
+            )
             return True
 
     @staticmethod
     def _get_comparator(condition: str):
-        _FILTER_SAFE = re.compile(
-            r"^[a-zA-Z0-9_\-\.\ \t'\"=<>!()\[\],:\+]+$"
-        )
+        _FILTER_SAFE = re.compile(r"^[a-zA-Z0-9_\-\.\ \t'\"=<>!()\[\],:\+]+$")
         if len(condition) > 512 or not _FILTER_SAFE.match(condition):
             PrintStyle.error(
                 f"Memory filter rejected (unsafe characters or too long): {condition!r}"
@@ -583,7 +599,7 @@ def get_agent_memory_subdir(agent: Agent) -> str:
 
     if not config:
         return "default"
-    
+
     # Check if project isolation is enabled and we are in a project
     if config.get("project_memory_isolation", True):
         project_name = projects.get_context_project_name(agent.context)
@@ -611,9 +627,7 @@ def get_existing_memory_subdirs() -> list[str]:
 
         project_subdirs = files.get_subdirectories(get_projects_parent_folder())
         for project_subdir in project_subdirs:
-            if files.exists(
-                get_project_meta(project_subdir), "memory", "index.faiss"
-            ):
+            if files.exists(get_project_meta(project_subdir), "memory", "index.faiss"):
                 subdirs.append(f"projects/{project_subdir}")
 
         # Ensure 'default' is always available
