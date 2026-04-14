@@ -28,6 +28,17 @@ from typing import Annotated
 
 SCHEDULER_FOLDER = "usr/scheduler"
 
+
+def _normalize_utc_datetimes(values: list[datetime] | None) -> list[datetime]:
+    if not values:
+        return []
+
+    utc_timezone = pytz.timezone("UTC")
+    return [
+        utc_timezone.localize(value) if value.tzinfo is None else value
+        for value in list(values)
+    ]
+
 # ----------------------
 # Task Models
 # ----------------------
@@ -64,19 +75,24 @@ class TaskPlan(BaseModel):
     done: list[datetime] = Field(default_factory=list)
 
     @classmethod
-    def create(cls, todo: list[datetime] = list(), in_progress: datetime | None = None, done: list[datetime] = list()):
-        if todo:
-            for idx, dt in enumerate(todo):
-                if dt.tzinfo is None:
-                    todo[idx] = pytz.timezone("UTC").localize(dt)
+    def create(
+        cls,
+        todo: list[datetime] | None = None,
+        in_progress: datetime | None = None,
+        done: list[datetime] | None = None,
+    ):
+        normalized_todo = _normalize_utc_datetimes(todo)
+        normalized_done = _normalize_utc_datetimes(done)
+
         if in_progress:
             if in_progress.tzinfo is None:
                 in_progress = pytz.timezone("UTC").localize(in_progress)
-        if done:
-            for idx, dt in enumerate(done):
-                if dt.tzinfo is None:
-                    done[idx] = pytz.timezone("UTC").localize(dt)
-        return cls(todo=todo, in_progress=in_progress, done=done)
+
+        return cls(
+            todo=normalized_todo,
+            in_progress=in_progress,
+            done=normalized_done,
+        )
 
     def add_todo(self, launch_time: datetime):
         if launch_time.tzinfo is None:
@@ -248,7 +264,7 @@ class AdHocTask(BaseTask):
         system_prompt: str,
         prompt: str,
         token: str,
-        attachments: list[str] = list(),
+        attachments: list[str] | None = None,
         context_id: str | None = None,
         project_name: str | None = None,
         project_color: str | None = None
@@ -256,7 +272,7 @@ class AdHocTask(BaseTask):
         return cls(name=name,
                    system_prompt=system_prompt,
                    prompt=prompt,
-                   attachments=attachments,
+                   attachments=list(attachments) if attachments is not None else [],
                    token=token,
                    context_id=context_id,
                    project_name=project_name,
@@ -296,7 +312,7 @@ class ScheduledTask(BaseTask):
         system_prompt: str,
         prompt: str,
         schedule: TaskSchedule,
-        attachments: list[str] = list(),
+        attachments: list[str] | None = None,
         context_id: str | None = None,
         timezone: str | None = None,
         project_name: str | None = None,
@@ -311,7 +327,7 @@ class ScheduledTask(BaseTask):
         return cls(name=name,
                    system_prompt=system_prompt,
                    prompt=prompt,
-                   attachments=attachments,
+                   attachments=list(attachments) if attachments is not None else [],
                    schedule=schedule,
                    context_id=context_id,
                    project_name=project_name,
@@ -378,7 +394,7 @@ class PlannedTask(BaseTask):
         system_prompt: str,
         prompt: str,
         plan: TaskPlan,
-        attachments: list[str] = list(),
+        attachments: list[str] | None = None,
         context_id: str | None = None,
         project_name: str | None = None,
         project_color: str | None = None
@@ -387,7 +403,7 @@ class PlannedTask(BaseTask):
                    system_prompt=system_prompt,
                    prompt=prompt,
                    plan=plan,
-                   attachments=attachments,
+                   attachments=list(attachments) if attachments is not None else [],
                    context_id=context_id,
                    project_name=project_name,
                    project_color=project_color)
