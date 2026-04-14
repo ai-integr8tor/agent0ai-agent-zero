@@ -1,5 +1,7 @@
+import asyncio
 from helpers.extension import Extension
 from agent import LoopData
+from helpers.print_style import PrintStyle
 from plugins._memory.extensions.python.message_loop_prompts_after._50_recall_memories import DATA_NAME_TASK as DATA_NAME_TASK_MEMORIES, DATA_NAME_ITER as DATA_NAME_ITER_MEMORIES
 from helpers import plugins
 
@@ -27,4 +29,7 @@ class RecallWait(Extension):
                     return
 
             # otherwise await the task
-            await task
+            try:
+                await task
+            except (TimeoutError, asyncio.TimeoutError):
+                PrintStyle.standard("Memory recall timed out, skipping")
