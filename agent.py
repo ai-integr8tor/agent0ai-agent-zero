@@ -875,6 +875,11 @@ class Agent:
         # Only validate when extraction produced an object; None means no JSON tool
         # block was found — the misformat warning path below handles that.
         if tool_request is not None:
+            # Normalize: map 'args' -> 'tool_args', default to empty dict
+            if "tool_args" not in tool_request:
+                tool_request["tool_args"] = tool_request.get("args", {})
+            if not isinstance(tool_request["tool_args"], dict):
+                tool_request["tool_args"] = {}
             await self.validate_tool_request(tool_request)
 
         if tool_request is not None:
