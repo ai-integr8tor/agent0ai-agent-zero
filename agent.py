@@ -872,6 +872,14 @@ class Agent:
         # search for tool usage requests in agent message
         tool_request = extract_tools.json_parse_dirty(msg)
 
+        # --- BEGIN FIX: convert old 'arguments' or 'args' keys to 'tool_args' ---
+        if isinstance(tool_request, dict):
+            if "arguments" in tool_request and "tool_args" not in tool_request:
+                tool_request["tool_args"] = tool_request.pop("arguments")
+            if "args" in tool_request and "tool_args" not in tool_request:
+                tool_request["tool_args"] = tool_request.pop("args")
+        # --- END FIX ---
+
         # Only validate when extraction produced an object; None means no JSON tool
         # block was found — the misformat warning path below handles that.
         if tool_request is not None:
