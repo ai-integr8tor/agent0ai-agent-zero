@@ -18,7 +18,8 @@ from langchain_community.vectorstores.utils import (
 )
 from langchain_core.embeddings import Embeddings
 
-import os, json, hashlib, re
+import asyncio
+import os, json, hashlib, re, tempfile
 
 import numpy as np
 
@@ -59,6 +60,15 @@ class Memory:
         SOLUTIONS = "solutions"
 
     index: dict[str, "MyFaiss"] = {}
+    _locks: dict[str, asyncio.Lock] = {}
+
+    @staticmethod
+    def _get_lock(memory_subdir: str) -> asyncio.Lock:
+        lock = Memory._locks.get(memory_subdir)
+        if lock is None:
+            lock = asyncio.Lock()
+            Memory._locks[memory_subdir] = lock
+        return lock
 
     @staticmethod
     def _get_embedding_config(agent=None):
@@ -191,6 +201,9 @@ class Memory:
                     # normalize_L2=True,
                     relevance_score_fn=Memory._cosine_normalizer,
                 )  # type: ignore
+                # self-heal desynced (index, id_map, docstore) triple if present
+                if Memory._heal_desync(db):
+                    Memory._save_db_file(db, memory_subdir)
 
             # if there is a mismatch in embeddings used, re-index the whole DB
             emb_ok = False
@@ -365,49 +378,48 @@ class Memory:
     async def delete_documents_by_query(
         self, query: str, threshold: float, filter: str = ""
     ):
-        k = 100
-        tot = 0
-        removed = []
+        async with Memory._get_lock(self.memory_subdir):
+            k = 100
+            tot = 0
+            removed = []
 
-        while True:
-            # Perform similarity search with score
-            docs = await self.search_similarity_threshold(
-                query, limit=k, threshold=threshold, filter=filter
-            )
-            removed += docs
+            while True:
+                # Perform similarity search with score
+                docs = await self.search_similarity_threshold(
+                    query, limit=k, threshold=threshold, filter=filter
+                )
+                removed += docs
 
-            # Extract document IDs and filter based on score
-            # document_ids = [result[0].metadata["id"] for result in docs if result[1] < score_limit]
-            document_ids = [result.metadata["id"] for result in docs]
+                # Extract document IDs and filter based on score
+                # document_ids = [result[0].metadata["id"] for result in docs if result[1] < score_limit]
+                document_ids = [result.metadata["id"] for result in docs]
 
-            # Delete documents with IDs over the threshold score
-            if document_ids:
-                # fnd = self.db.get(where={"id": {"$in": document_ids}})
-                # if fnd["ids"]: self.db.delete(ids=fnd["ids"])
-                # tot += len(fnd["ids"])
-                await self.db.adelete(ids=document_ids)
-                tot += len(document_ids)
+                # Delete documents with IDs over the threshold score
+                if document_ids:
+                    await self.db.adelete(ids=document_ids)
+                    tot += len(document_ids)
 
-            # If fewer than K document IDs, break the loop
-            if len(document_ids) < k:
-                break
+                # If fewer than K document IDs, break the loop
+                if len(document_ids) < k:
+                    break
 
-        if tot:
-            self._save_db()  # persist
-        return removed
+            if tot:
+                self._save_db()  # persist
+            return removed
 
     async def delete_documents_by_ids(self, ids: list[str]):
-        # aget_by_ids is not yet implemented in faiss, need to do a workaround
-        rem_docs = await self.db.aget_by_ids(
-            ids
-        )  # existing docs to remove (prevents error)
-        if rem_docs:
-            rem_ids = [doc.metadata["id"] for doc in rem_docs]  # ids to remove
-            await self.db.adelete(ids=rem_ids)
+        async with Memory._get_lock(self.memory_subdir):
+            # aget_by_ids is not yet implemented in faiss, need to do a workaround
+            rem_docs = await self.db.aget_by_ids(
+                ids
+            )  # existing docs to remove (prevents error)
+            if rem_docs:
+                rem_ids = [doc.metadata["id"] for doc in rem_docs]  # ids to remove
+                await self.db.adelete(ids=rem_ids)
 
-        if rem_docs:
-            self._save_db()  # persist
-        return rem_docs
+            if rem_docs:
+                self._save_db()  # persist
+            return rem_docs
 
     async def insert_text(self, text, metadata: dict = {}):
         doc = Document(text, metadata=metadata)
@@ -415,26 +427,28 @@ class Memory:
         return ids[0]
 
     async def insert_documents(self, docs: list[Document]):
-        ids = [self._generate_doc_id() for _ in range(len(docs))]
-        timestamp = self.get_timestamp()
+        async with Memory._get_lock(self.memory_subdir):
+            ids = [self._generate_doc_id() for _ in range(len(docs))]
+            timestamp = self.get_timestamp()
 
-        if ids:
-            for doc, id in zip(docs, ids):
-                doc.metadata["id"] = id  # add ids to documents metadata
-                doc.metadata["timestamp"] = timestamp  # add timestamp
-                if not doc.metadata.get("area", ""):
-                    doc.metadata["area"] = Memory.Area.MAIN.value
+            if ids:
+                for doc, id in zip(docs, ids):
+                    doc.metadata["id"] = id  # add ids to documents metadata
+                    doc.metadata["timestamp"] = timestamp  # add timestamp
+                    if not doc.metadata.get("area", ""):
+                        doc.metadata["area"] = Memory.Area.MAIN.value
 
-            await self.db.aadd_documents(documents=docs, ids=ids)
-            self._save_db()  # persist
-        return ids
+                await self.db.aadd_documents(documents=docs, ids=ids)
+                self._save_db()  # persist
+            return ids
 
     async def update_documents(self, docs: list[Document]):
-        ids = [doc.metadata["id"] for doc in docs]
-        await self.db.adelete(ids=ids)  # delete originals
-        ins = await self.db.aadd_documents(documents=docs, ids=ids)  # add updated
-        self._save_db()  # persist
-        return ins
+        async with Memory._get_lock(self.memory_subdir):
+            ids = [doc.metadata["id"] for doc in docs]
+            await self.db.adelete(ids=ids)  # delete originals
+            ins = await self.db.aadd_documents(documents=docs, ids=ids)  # add updated
+            self._save_db()  # persist
+            return ins
 
     def _save_db(self):
         Memory._save_db_file(self.db, self.memory_subdir)
@@ -447,41 +461,127 @@ class Memory:
 
     @staticmethod
     def _save_db_file(db: MyFaiss, memory_subdir: str):
+        # Atomic save: write faiss+pkl to a staging dir, fsync, then os.replace
+        # each into the final location. Non-atomic across files, but the hash
+        # sidecar (covering both) catches torn saves on the next load.
         abs_dir = abs_db_dir(memory_subdir)
-        db.save_local(folder_path=abs_dir)
+        os.makedirs(abs_dir, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".save-", dir=abs_dir) as staging:
+            db.save_local(folder_path=staging)
+            staged_faiss = os.path.join(staging, "index.faiss")
+            staged_pkl = os.path.join(staging, "index.pkl")
+            Memory._fsync_file(staged_faiss)
+            Memory._fsync_file(staged_pkl)
+            os.replace(staged_faiss, os.path.join(abs_dir, "index.faiss"))
+            os.replace(staged_pkl, os.path.join(abs_dir, "index.pkl"))
+            Memory._fsync_dir(abs_dir)
         Memory._write_index_hash(abs_dir)
+
+    @staticmethod
+    def _fsync_file(path: str) -> None:
+        try:
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _fsync_dir(path: str) -> None:
+        try:
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _hash_file(path: str) -> str:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
 
     @staticmethod
     def _write_index_hash(abs_dir: str) -> None:
         faiss_path = os.path.join(abs_dir, "index.faiss")
+        pkl_path = os.path.join(abs_dir, "index.pkl")
         hash_path = os.path.join(abs_dir, "index.faiss.sha256")
         try:
-            h = hashlib.sha256()
-            with open(faiss_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            with open(hash_path, "w") as f:
-                f.write(h.hexdigest())
+            payload = {
+                "version": 2,
+                "faiss": Memory._hash_file(faiss_path),
+                "pkl": Memory._hash_file(pkl_path) if os.path.exists(pkl_path) else None,
+            }
+            tmp_path = hash_path + ".tmp"
+            with open(tmp_path, "w") as f:
+                f.write(json.dumps(payload))
+            os.replace(tmp_path, hash_path)
         except Exception as e:
             PrintStyle(font_color="yellow").print(f"Warning: could not write FAISS hash: {e}")
 
     @staticmethod
     def _verify_index_hash(abs_dir: str) -> bool:
         faiss_path = os.path.join(abs_dir, "index.faiss")
+        pkl_path = os.path.join(abs_dir, "index.pkl")
         hash_path = os.path.join(abs_dir, "index.faiss.sha256")
         if not os.path.exists(hash_path):
             return True
         try:
             with open(hash_path, "r") as f:
-                stored = f.read().strip()
-            h = hashlib.sha256()
-            with open(faiss_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            return h.hexdigest() == stored
+                raw = f.read().strip()
+            try:
+                payload = json.loads(raw)
+                stored_faiss = payload.get("faiss")
+                stored_pkl = payload.get("pkl")
+            except json.JSONDecodeError:
+                # legacy format: single hex sha256 of index.faiss only
+                stored_faiss = raw
+                stored_pkl = None
+            if stored_faiss and Memory._hash_file(faiss_path) != stored_faiss:
+                return False
+            if stored_pkl and os.path.exists(pkl_path):
+                if Memory._hash_file(pkl_path) != stored_pkl:
+                    return False
+            return True
         except Exception as e:
             PrintStyle(font_color="yellow").print(f"Warning: FAISS hash check failed: {e}")
             return True
+
+    @staticmethod
+    def _heal_desync(db: MyFaiss) -> bool:
+        """Drop orphan entries when (index, index_to_docstore_id, docstore) desync.
+
+        Returns True if any repair was performed (caller should persist).
+        """
+        try:
+            docstore_ids = set(db.docstore._dict.keys())  # type: ignore[attr-defined]
+            orphan_positions = [pos for pos, did in db.index_to_docstore_id.items()
+                                if did not in docstore_ids]
+            mapped_ids = set(db.index_to_docstore_id.values())
+            stranded = docstore_ids - mapped_ids
+            if not orphan_positions and not stranded:
+                return False
+            if orphan_positions:
+                db.index.remove_ids(np.array(orphan_positions, dtype=np.int64))
+                remaining = [(pos, did) for pos, did in sorted(db.index_to_docstore_id.items())
+                             if did in docstore_ids]
+                db.index_to_docstore_id = {i: did for i, (_, did) in enumerate(remaining)}
+            for sid in stranded:
+                db.docstore._dict.pop(sid, None)  # type: ignore[attr-defined]
+            PrintStyle(font_color="yellow").print(
+                f"FAISS self-heal: removed {len(orphan_positions)} orphan index entries, "
+                f"{len(stranded)} stranded docstore entries."
+            )
+            return True
+        except Exception as e:
+            PrintStyle(font_color="yellow").print(f"Warning: FAISS self-heal skipped: {e}")
+            return False
 
     @staticmethod
     def _get_comparator(condition: str):
