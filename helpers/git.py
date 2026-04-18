@@ -6,6 +6,7 @@ import os
 import subprocess
 import base64
 import re
+import time
 from urllib.parse import urlparse, urlunparse
 from helpers import files
 
@@ -449,7 +450,37 @@ def clone_repo(url: str, dest: str, token: str | None = None):
     return Repo(dest)
 
 
-def update_repo(repo_path: str) -> Repo:
+class DirtyTreeConflictError(Exception):
+    """Raised when a pull would overwrite local changes that conflict with upstream.
+    The user's changes are preserved in a stash (see `stash_ref`)."""
+
+    def __init__(self, message: str, stash_ref: str, conflicting_files: list[str]):
+        super().__init__(message)
+        self.stash_ref = stash_ref
+        self.conflicting_files = conflicting_files
+
+
+def _list_dirty_tracked_files(repo: "Repo") -> list[str]:
+    """Return tracked files with uncommitted modifications, excluding A0 metadata."""
+    def _is_a0_file(path: str) -> bool:
+        return path.startswith(".a0proj") or path == ".a0proj"
+
+    changed = {d.a_path for d in repo.index.diff(None)}
+    changed.update(d.a_path for d in repo.index.diff("HEAD"))
+    return sorted(p for p in changed if p and not _is_a0_file(p))
+
+
+def update_repo(repo_path: str, auto_stash: bool = True) -> Repo:
+    """Fast-forward the repo to its tracking branch.
+
+    When `auto_stash` is True (default) and the working tree has uncommitted
+    changes to tracked files, those changes are stashed before the pull and
+    popped back afterwards. If popping produces a merge conflict — i.e. the
+    user's edits genuinely diverge from the new upstream content — the stash
+    is left in place and `DirtyTreeConflictError` is raised so callers can
+    surface a structured error (the user's work is preserved in `git stash`,
+    not lost).
+    """
     repo = Repo(repo_path)
     if repo.bare:
         raise ValueError(f"Repository at {repo_path} is bare and cannot be updated.")
@@ -465,8 +496,41 @@ def update_repo(repo_path: str) -> Repo:
     env = os.environ.copy()
     env['GIT_TERMINAL_PROMPT'] = '0'
 
-    with repo.git.custom_environment(**env):
-        repo.remotes[tracking_branch.remote_name].pull(branch)
+    dirty_files = _list_dirty_tracked_files(repo) if auto_stash else []
+    stash_created = False
+    if dirty_files:
+        stash_msg = f"a0-auto-stash-{int(time.time())}"
+        repo.git.stash("push", "-m", stash_msg, "--", *dirty_files)
+        stash_created = True
+
+    try:
+        with repo.git.custom_environment(**env):
+            repo.remotes[tracking_branch.remote_name].pull(branch)
+    except Exception:
+        # Pull failed — restore the user's work before propagating.
+        if stash_created:
+            try:
+                repo.git.stash("pop")
+            except Exception:
+                pass  # leave stash in place; user can recover manually
+        raise
+
+    if stash_created:
+        try:
+            repo.git.stash("pop")
+        except Exception:
+            # Conflict popping the stash — upstream and local both touched the
+            # same hunks. Keep the stash so the user can recover their edits.
+            stash_ref = "stash@{0}"
+            raise DirtyTreeConflictError(
+                "Local changes to "
+                + ", ".join(dirty_files)
+                + " conflict with the update. Your edits are preserved in "
+                + f"`git stash` ({stash_ref}). Resolve manually, then run "
+                + "`git stash pop` inside the plugin directory.",
+                stash_ref=stash_ref,
+                conflicting_files=dirty_files,
+            )
 
     return repo
 

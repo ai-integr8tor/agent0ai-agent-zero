@@ -59,6 +59,11 @@ const model = {
 
   detailThumbnailUrl: null,
 
+  // Inline error for the detail modal (e.g. update failure), structured so
+  // the UI can render it next to the action button instead of relying on a
+  // toast the user can miss.
+  detailError: null,
+
   // Tab state
   activeTab: "store",
 
@@ -511,6 +516,7 @@ const model = {
     this.result = null;
     this.installedPluginInfo = null;
     this.readmeContent = null;
+    this.detailError = null;
     this.detailThumbnailUrl = this.getThumbnailUrl(this.selectedPlugin);
     if (this.selectedPlugin.installed) {
       this.fetchInstalledPluginInfo(this.selectedPlugin.name);
@@ -801,6 +807,8 @@ const model = {
     });
     if (!confirmed) return;
 
+    this.detailError = null;
+
     try {
       this.loading = true;
       this.loadingMessage = "Updating";
@@ -811,7 +819,15 @@ const model = {
       });
 
       if (!(data?.ok && data?.success)) {
-        void toastFrontendError(data?.error || "Update failed", "Plugin Installer");
+        const message = data?.error || "Update failed";
+        this.detailError = {
+          kind: data?.error_kind || "update_failed",
+          message,
+          conflicting_files: Array.isArray(data?.conflicting_files) ? data.conflicting_files : [],
+          stashed: !!data?.stashed,
+          stash_ref: data?.stash_ref || "",
+        };
+        void toastFrontendError(message, "Plugin Installer");
         return;
       }
 
