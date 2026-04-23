@@ -802,11 +802,15 @@ class MCPConfig(BaseModel):
         if "." not in tool_name:
             raise ValueError(f"Tool {tool_name} not found")
         server_name_part, tool_name_part = tool_name.split(".")
+        target_server = None
         with self.__lock:
             for server in self.servers:
                 if server.name == server_name_part and server.has_tool(tool_name_part):
-                    return await server.call_tool(tool_name_part, input_data)
+                    target_server = server
+                    break
+        if target_server is None:
             raise ValueError(f"Tool {tool_name} not found")
+        return await target_server.call_tool(tool_name_part, input_data)
 
 
 T = TypeVar("T")
