@@ -232,11 +232,13 @@ class MCPServerRemote(BaseModel):
     disabled: bool = Field(default=False)
 
     __lock: ClassVar[threading.Lock] = PrivateAttr(default=threading.Lock())
+    __async_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
     __client: Optional["MCPClientRemote"] = PrivateAttr(default=None)
 
     def __init__(self, config: dict[str, Any]):
         super().__init__()
         self.__client = MCPClientRemote(self)
+        self.__async_lock = asyncio.Lock()
         self.update(config)
 
     def get_error(self) -> str:
@@ -261,8 +263,9 @@ class MCPServerRemote(BaseModel):
         self, tool_name: str, input_data: Dict[str, Any]
     ) -> CallToolResult:
         """Call a tool with the given input data"""
-        with self.__lock:
-            # We already run in an event loop, dont believe Pylance
+        # Use asyncio.Lock here — threading.Lock must not be held across an await,
+        # as it blocks the event loop thread and freezes all other coroutines.
+        async with self.__async_lock:
             return await self.__client.call_tool(tool_name, input_data)  # type: ignore
 
     def update(self, config: dict[str, Any]) -> "MCPServerRemote":
@@ -310,11 +313,13 @@ class MCPServerLocal(BaseModel):
     disabled: bool = Field(default=False)
 
     __lock: ClassVar[threading.Lock] = PrivateAttr(default=threading.Lock())
+    __async_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
     __client: Optional["MCPClientLocal"] = PrivateAttr(default=None)
 
     def __init__(self, config: dict[str, Any]):
         super().__init__()
         self.__client = MCPClientLocal(self)
+        self.__async_lock = asyncio.Lock()
         self.update(config)
 
     def get_error(self) -> str:
@@ -339,8 +344,7 @@ class MCPServerLocal(BaseModel):
         self, tool_name: str, input_data: Dict[str, Any]
     ) -> CallToolResult:
         """Call a tool with the given input data"""
-        with self.__lock:
-            # We already run in an event loop, dont believe Pylance
+        async with self.__async_lock:
             return await self.__client.call_tool(tool_name, input_data)  # type: ignore
 
     def update(self, config: dict[str, Any]) -> "MCPServerLocal":
@@ -970,11 +974,11 @@ class MCPClientBase(ABC):
 
         async def call_tool_op(current_session: ClientSession):
             set = settings.get_settings()
-            # PrintStyle(font_color="cyan").print(f"MCPClientBase ({self.server.name}): Executing 'call_tool' for '{tool_name}' via MCP session...")
+            tool_timeout = self.server.tool_timeout or set["mcp_client_tool_timeout"]
             response: CallToolResult = await current_session.call_tool(
                 tool_name,
                 input_data,
-                read_timeout_seconds=timedelta(seconds=set["mcp_client_tool_timeout"]),
+                read_timeout_seconds=timedelta(seconds=tool_timeout),
             )
             # PrintStyle(font_color="green").print(f"MCPClientBase ({self.server.name}): Tool '{tool_name}' call successful via session.")
             return response
