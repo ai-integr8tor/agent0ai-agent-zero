@@ -256,7 +256,7 @@ class CodeExecution(Tool):
             if partial_output:
                 PrintStyle(font_color="#85C1E9").stream(partial_output)
                 truncated_output = self.fix_full_output(full_output)
-                self.set_progress(truncated_output)
+                await self.set_progress(truncated_output)
                 heading = self.get_heading_from_output(truncated_output, 0)
                 self.log.update(content=prefix + truncated_output, heading=heading)
                 last_output_time = now
@@ -368,7 +368,7 @@ class CodeExecution(Tool):
             timeout=1, reset_full_output=reset_full_output
         )
         truncated_output = self.fix_full_output(full_output)
-        self.set_progress(truncated_output)
+        await self.set_progress(truncated_output)
         heading = self.get_heading_from_output(truncated_output, 0)
 
         last_lines = (
