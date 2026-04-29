@@ -723,8 +723,63 @@ def _get_litellm_embedding(
     )
 
 
+def _normalize_tool_calls(chunk: Any) -> None:
+    """Normalize ``tool_calls: None`` to ``[]`` on every choice of a LiteLLM/OpenAI
+    style response or streaming chunk.
+
+    Some GPT-style providers (e.g. gpt-5.5 and certain proxies) return
+    ``tool_calls: null`` for turns where the model did not call a tool. Downstream
+    Agent Zero / LangChain code paths iterate ``tool_calls`` directly and crash
+    with ``TypeError: 'NoneType' object is not iterable`` when this happens.
+
+    This helper mutates the chunk in place so that any explicit ``None`` becomes
+    an empty list at the response boundary, preserving real tool calls untouched.
+    Both dict-like and pydantic/object-like LiteLLM responses are supported.
+    """
+    try:
+        choices = chunk["choices"] if isinstance(chunk, dict) else getattr(chunk, "choices", None)
+    except Exception:
+        choices = None
+    if not choices:
+        return
+
+    def _fix(container: Any) -> None:
+        if container is None:
+            return
+        if isinstance(container, dict):
+            if container.get("tool_calls", "__missing__") is None:
+                container["tool_calls"] = []
+        else:
+            try:
+                if getattr(container, "tool_calls", "__missing__") is None:
+                    setattr(container, "tool_calls", [])
+            except Exception:
+                pass
+
+    for choice in choices:
+        # delta (streaming)
+        delta = choice.get("delta") if isinstance(choice, dict) else getattr(choice, "delta", None)
+        _fix(delta)
+        # message (non-stream)
+        message = choice.get("message") if isinstance(choice, dict) else getattr(choice, "message", None)
+        _fix(message)
+        # model_extra.message (some providers)
+        model_extra = (
+            choice.get("model_extra") if isinstance(choice, dict) else getattr(choice, "model_extra", None)
+        )
+        if model_extra is not None:
+            inner = (
+                model_extra.get("message") if isinstance(model_extra, dict) else getattr(model_extra, "message", None)
+            )
+            _fix(inner)
+
+
 def _parse_chunk(chunk: Any) -> ChatChunk:
-    delta = chunk["choices"][0].get("delta", {})
+    # Normalize null tool_calls -> [] so downstream parsers/iterators are safe
+    # for GPT-style models (e.g. gpt-5.5) that emit tool_calls: null on
+    # turns that do not invoke a tool.
+    _normalize_tool_calls(chunk)
+    delta = chunk["choices"][0].get("delta", {}) or {}
     message = chunk["choices"][0].get("message", {}) or chunk["choices"][0].get(
         "model_extra", {}
     ).get("message", {})
@@ -804,6 +859,14 @@ def _merge_provider_defaults(
     if isinstance(global_kwargs, dict):
         for k, v in _normalize_values(global_kwargs).items():
             kwargs.setdefault(k, v)
+
+    # GPT-style models can return non-deterministic / partially-formed tool_calls
+    # at higher temperatures, which has shown up as null tool_calls and JSON
+    # parser instantiation crashes (e.g. gpt-5.5). Default chat completions to
+    # temperature=1 unless the caller / preset / global kwargs explicitly
+    # override it. setdefault preserves any pre-set value.
+    if provider_type == "chat":
+        kwargs.setdefault("temperature", 1)
 
     return provider_name, kwargs
 
