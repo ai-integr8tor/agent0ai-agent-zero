@@ -14,6 +14,7 @@ For the full contribution workflow, start with:
 - Search open and recently closed upstream PRs before opening a new one.
 - Use the branch currently adopted by comparable active upstream PRs or explicit maintainer guidance.
 - Keep one focused change per PR whenever practical.
+- All PRs must be made against the `development` branch wherever possible unless instructed otherwise.
 - Keep the source branch available on your fork until the PR is merged or intentionally closed.
 - Include exact tests run, or clearly explain why validation was blocked.
 - Do not include secrets, `.env` files, local virtual environments, or machine-specific artifacts in a PR.
