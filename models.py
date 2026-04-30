@@ -663,70 +663,218 @@ class LiteLLMEmbeddingWrapper(Embeddings):
 
     def _ollama_embed(self, texts: List[str]) -> List[List[float]]:
         """Bypass LiteLLM for Ollama — its handler sends a malformed body
-        (ollama/ prefix in model name + unsupported kwargs) causing 400."""
+        (ollama/ prefix in model name + unsupported kwargs) causing 400.
+
+        Defensive design:
+        - Non-str / None inputs are coerced to str before the HTTP call.
+        - Empty or whitespace-only strings are sent as a single space " " because
+          some Ollama model builds reject "" but accept " " without error.
+        - Positions that were blank get a zero-vector back so callers that rely
+          on index alignment (e.g. FAISS batch inserts) are never surprised.
+        - The Ollama model name is derived by stripping every recognised provider
+          prefix so that mis-configured model strings still resolve correctly.
+        - HTTP 400 no longer raises immediately; the payload is logged at ERROR
+          level and the error is re-raised with an actionable message so the
+          cause is visible in logs rather than a silent crash.
+        - HTTP 404 → the model is not loaded in Ollama; raises with a clear hint
+          to run `ollama pull <model>`.
+        - HTTP 503 / 429 → transient; retried with exponential back-off.
+        """
         import httpx
         import time
 
-        # Sanitize: Ollama rejects null/None entries with HTTP 400 "invalid input type".
-        # Convert None → empty string and ensure all items are str so JSON serialisation
-        # never produces a null element in the input array.
-        safe_texts = [
-            t if isinstance(t, str) else ("" if t is None else str(t)) for t in texts
-        ]
-        if safe_texts != texts:
+        # ── 1. Coerce all inputs to plain strings ───────────────────────────
+        non_str = [i for i, t in enumerate(texts) if not isinstance(t, str)]
+        if non_str:
             logging.warning(
-                "Ollama embed %s: %d input(s) contained non-str values and were sanitised. "
-                "Original types: %s",
+                "Ollama embed %s: %d input(s) were not str and have been coerced. "
+                "Indices=%s  Types=%s",
                 self.model_name,
-                sum(1 for t in texts if not isinstance(t, str)),
-                [type(t).__name__ for t in texts if not isinstance(t, str)],
+                len(non_str),
+                non_str[:10],
+                [type(texts[i]).__name__ for i in non_str[:10]],
             )
-        texts = safe_texts
+        texts = [t if isinstance(t, str) else ("" if t is None else str(t)) for t in texts]
 
-        model = self.model_name.removeprefix("ollama/")
+        # ── 2. Track blank positions; replace them with a single space ───────
+        # Ollama's /api/embed rejects "" on some model builds (HTTP 400).
+        # A single space always works and produces a valid (if meaningless) vector.
+        blank_indices: set[int] = set()
+        sanitised: list[str] = []
+        for i, t in enumerate(texts):
+            if not t.strip():
+                blank_indices.add(i)
+                sanitised.append(" ")
+            else:
+                sanitised.append(t)
+
+        if blank_indices:
+            logging.debug(
+                "Ollama embed %s: %d blank/whitespace text(s) replaced with ' ' "
+                "to avoid HTTP 400. Indices: %s",
+                self.model_name,
+                len(blank_indices),
+                sorted(blank_indices)[:20],
+            )
+
+        # ── 3. Short-circuit: nothing to embed ──────────────────────────────
+        if not sanitised:
+            return []
+
+        # ── 3.5. Chunk long texts (2048-token context ≈ 4000 chars worst-case) ──
+        _CHAR_LIMIT = 4000
+
+        flat_chunks: list[str] = []
+        chunk_map: list[tuple[int, int]] = []
+
+        for text in sanitised:
+            if len(text) <= _CHAR_LIMIT:
+                chunk_map.append((len(flat_chunks), 1))
+                flat_chunks.append(text)
+            else:
+                pieces: list[str] = []
+                words = text.split()
+                buf: list[str] = []
+                buf_len = 0
+                for w in words:
+                    if len(w) > _CHAR_LIMIT:
+                        if buf:
+                            pieces.append(" ".join(buf))
+                            buf, buf_len = [], 0
+                        for pos in range(0, len(w), _CHAR_LIMIT):
+                            pieces.append(w[pos:pos + _CHAR_LIMIT])
+                        continue
+                    added = len(w) + (1 if buf else 0)
+                    if buf_len + added > _CHAR_LIMIT and buf:
+                        pieces.append(" ".join(buf))
+                        buf, buf_len = [w], len(w)
+                    else:
+                        buf.append(w)
+                        buf_len += added
+                if buf:
+                    pieces.append(" ".join(buf))
+                if not pieces:
+                    pieces = [" "]
+                chunk_map.append((len(flat_chunks), len(pieces)))
+                flat_chunks.extend(pieces)
+                logging.debug(
+                    "Ollama embed %s: text #%d (%d chars) split into %d chunks",
+                    self.model_name, len(chunk_map) - 1, len(text), len(pieces),
+                )
+
+        # ── 4. Resolve model name and API base ──────────────────────────────
+        # Strip any recognised provider prefix (ollama/, ollama_chat/, etc.)
+        raw_model = self.model_name
+        for prefix in ("ollama_chat/", "ollama/"):
+            if raw_model.startswith(prefix):
+                raw_model = raw_model[len(prefix):]
+                break
+        model = raw_model  # e.g. "nomic-embed-text"
+
         api_base = self._api_base or os.environ.get(
             "OLLAMA_API_BASE",
             os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
         )
         api_base = api_base.rstrip("/")
-        if api_base.endswith("/api/embed") or api_base.endswith("/api/embeddings"):
-            api_base = api_base.rsplit("/api/", 1)[0]
+        # Strip trailing API path segments added by misconfigured env vars
+        for suffix in ("/api/embed", "/api/embeddings", "/api"):
+            if api_base.endswith(suffix):
+                api_base = api_base[: -len(suffix)]
+                break
 
         url = f"{api_base}/api/embed"
-        payload = {"model": model, "input": texts}
+        payload = {"model": model, "input": flat_chunks, "truncate": True}
 
+        # ── 5. HTTP call with retry / back-off ──────────────────────────────
         last_exc: Exception = RuntimeError("no attempts made")
+        dim: Optional[int] = None  # discovered on first successful response
+
         for attempt in range(3):
             if attempt:
                 time.sleep(2.0 * attempt)
             try:
                 resp = httpx.post(url, json=payload, timeout=120.0)
+
                 if resp.status_code != 200:
-                    logging.warning(
-                        "Ollama embed %s attempt %d: HTTP %d — %s | texts[:100]=%r",
-                        model,
-                        attempt + 1,
+                    # Log enough context to diagnose the problem without flooding.
+                    sample = [s[:120] for s in flat_chunks[:3]]
+                    logging.error(
+                        "Ollama embed HTTP %d for model=%r url=%r attempt=%d\n"
+                        "  error body : %s\n"
+                        "  input sample: %r",
                         resp.status_code,
-                        resp.text[:300],
-                        [t[:100] if isinstance(t, str) else t for t in texts],
+                        model,
+                        url,
+                        attempt + 1,
+                        resp.text[:500],
+                        sample,
                     )
-                    resp.raise_for_status()
-                return resp.json()["embeddings"]
+
+                    if resp.status_code == 404:
+                        raise RuntimeError(
+                            f"Ollama model '{model}' is not available at {api_base}. "
+                            f"Run `ollama pull {model}` and retry."
+                        )
+
+                    if resp.status_code == 400:
+                        # Bad payload — retrying with the same content won't help.
+                        raise RuntimeError(
+                            f"Ollama returned HTTP 400 for model='{model}'. "
+                            f"Error: {resp.text[:300]}. "
+                            f"Check that the model is running and the input texts "
+                            f"are valid UTF-8 strings."
+                        )
+
+                    resp.raise_for_status()  # 5xx / other → HTTPStatusError
+
+                chunk_embeddings: list[list[float]] = resp.json()["embeddings"]
+
+                if dim is None:
+                    for vec in chunk_embeddings:
+                        if vec:
+                            dim = len(vec)
+                            break
+
+                # ── 6. Mean-pool chunk embeddings → one vector per text ──
+                pooled: list[list[float]] = []
+                for start, n_chunks in chunk_map:
+                    if n_chunks == 1:
+                        pooled.append(chunk_embeddings[start])
+                    else:
+                        d = dim or len(chunk_embeddings[start])
+                        avg = [0.0] * d
+                        for ci in range(start, start + n_chunks):
+                            for j in range(d):
+                                avg[j] += chunk_embeddings[ci][j]
+                        inv = 1.0 / n_chunks
+                        pooled.append([v * inv for v in avg])
+
+                # ── 7. Restore zero-vectors for originally-blank positions ──
+                if blank_indices and dim is not None:
+                    zero: list[float] = [0.0] * dim
+                    for idx in blank_indices:
+                        pooled[idx] = zero
+
+                return pooled
+
+            except (RuntimeError,) as e:
+                # Our own descriptive errors — surface immediately, no retry.
+                raise
             except httpx.HTTPStatusError as e:
                 last_exc = e
-                # 400 = bad request payload — retrying won't help, raise immediately
-                if e.response.status_code == 400:
-                    raise
-                # 429 / 503 = transient — retry with backoff
-                if e.response.status_code not in (503, 429):
-                    raise
+                # 429 / 503 = transient — retry with back-off
+                if e.response.status_code in (429, 503):
+                    continue
+                raise
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_exc = e
+                # Connection problems — retry
+
         raise last_exc
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         # Apply rate limiting if configured
-        apply_rate_limiter_sync(self.a0_model_conf, " ".join(texts))
+        apply_rate_limiter_sync(self.a0_model_conf, " ".join(t for t in texts if isinstance(t, str)))
 
         if self._is_ollama():
             return self._ollama_embed(texts)
