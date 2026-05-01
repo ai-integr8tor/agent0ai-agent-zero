@@ -517,11 +517,13 @@ For **Planned Tasks**, add specific execution times:
 - Prevents context pollution between tasks
 - Better for independent, recurring workflows
 - Default for UI-created tasks
+- Use `wait_for_task` or open the task's chat context when you want to inspect its result from another chat
 
 **Shared Context**:
 - Task shares a chat context (useful for agent-created tasks)
 - Can build on previous task executions
 - Useful for sequential, related operations
+- Better when you expect to ask follow-up questions in the same chat after the task finishes
 
 #### Execution Flow
 
