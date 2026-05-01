@@ -4,6 +4,8 @@ rules:
 - before `scheduler:create_*` or `scheduler:run_task`, inspect existing tasks with `scheduler:find_task_by_name` or `scheduler:list_tasks`
 - do not manually run a task just because it is scheduled or planned unless user asks to run now
 - do not create recursive task prompts that schedule more tasks
+- use the current chat context when the user will likely ask follow-up questions about the task result
+- use `dedicated_context` for independent background jobs whose results should stay in their own task chat
 methods:
 - `scheduler:list_tasks`: optional `state[]`, `type[]`, `next_run_within`, `next_run_after`
 - `scheduler:find_task_by_name`: `name`
