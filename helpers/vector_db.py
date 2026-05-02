@@ -1,3 +1,4 @@
+import logging
 from typing import Any, List, Sequence
 from langchain_community.vectorstores import FAISS
 
@@ -78,13 +79,21 @@ class VectorDB:
     ):
         comparator = get_comparator(filter) if filter else None
 
-        return await self.db.asearch(
-            query,
-            search_type="similarity_score_threshold",
-            k=limit,
-            score_threshold=threshold,
-            filter=comparator,
-        )
+        try:
+            return await self.db.asearch(
+                query,
+                search_type="similarity_score_threshold",
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
+        except Exception as e:
+            logging.warning(
+                "VectorDB search failed (embedding error) — returning empty results: %s: %s",
+                type(e).__name__,
+                str(e)[:200],
+            )
+            return []
 
     async def search_by_metadata(self, filter: str, limit: int = 0) -> list[Document]:
         comparator = get_comparator(filter)

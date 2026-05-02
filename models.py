@@ -661,6 +661,60 @@ class LiteLLMEmbeddingWrapper(Embeddings):
     def _is_ollama(self) -> bool:
         return self._provider == "ollama"
 
+    @staticmethod
+    def _chunk_texts(
+        texts: list[str], char_limit: int
+    ) -> tuple[list[str], list[tuple[int, int]]]:
+        """Split *texts* into chunks of at most *char_limit* characters.
+
+        Returns ``(flat_chunks, chunk_map)`` where ``chunk_map[i] = (start,
+        count)`` maps original text index *i* to its span inside
+        *flat_chunks*.
+        """
+        flat_chunks: list[str] = []
+        chunk_map: list[tuple[int, int]] = []
+
+        for text in texts:
+            if len(text) <= char_limit:
+                chunk_map.append((len(flat_chunks), 1))
+                flat_chunks.append(text)
+            else:
+                pieces: list[str] = []
+                words = text.split()
+                buf: list[str] = []
+                buf_len = 0
+                for w in words:
+                    if len(w) > char_limit:
+                        if buf:
+                            pieces.append(" ".join(buf))
+                            buf, buf_len = [], 0
+                        for pos in range(0, len(w), char_limit):
+                            pieces.append(w[pos : pos + char_limit])
+                        continue
+                    added = len(w) + (1 if buf else 0)
+                    if buf_len + added > char_limit and buf:
+                        pieces.append(" ".join(buf))
+                        buf, buf_len = [w], len(w)
+                    else:
+                        buf.append(w)
+                        buf_len += added
+                if buf:
+                    pieces.append(" ".join(buf))
+                if not pieces:
+                    pieces = [" "]
+                chunk_map.append((len(flat_chunks), len(pieces)))
+                flat_chunks.extend(pieces)
+                logging.debug(
+                    "Ollama embed: text #%d (%d chars) split into %d chunks "
+                    "(char_limit=%d)",
+                    len(chunk_map) - 1,
+                    len(text),
+                    len(pieces),
+                    char_limit,
+                )
+
+        return flat_chunks, chunk_map
+
     def _ollama_embed(self, texts: List[str]) -> List[List[float]]:
         """Bypass LiteLLM for Ollama — its handler sends a malformed body
         (ollama/ prefix in model name + unsupported kwargs) causing 400.
@@ -721,82 +775,51 @@ class LiteLLMEmbeddingWrapper(Embeddings):
         if not sanitised:
             return []
 
-        # ── 3.5. Chunk long texts (2048-token context ≈ 4000 chars worst-case) ──
-        _CHAR_LIMIT = 4000
+        # ── 3.5. Chunk long texts ────────────────────────────────────────────
+        # Conservative default: 2000 chars ≈ 1000-2000 tokens depending on
+        # content.  Safely below the 2048-token training context of models
+        # like nomic-embed-text (8192-token NTK-scaled ceiling).
+        _CHAR_LIMIT_DEFAULT = 2000
+        _CHAR_LIMIT_FLOOR = 500
 
-        flat_chunks: list[str] = []
-        chunk_map: list[tuple[int, int]] = []
-
-        for text in sanitised:
-            if len(text) <= _CHAR_LIMIT:
-                chunk_map.append((len(flat_chunks), 1))
-                flat_chunks.append(text)
-            else:
-                pieces: list[str] = []
-                words = text.split()
-                buf: list[str] = []
-                buf_len = 0
-                for w in words:
-                    if len(w) > _CHAR_LIMIT:
-                        if buf:
-                            pieces.append(" ".join(buf))
-                            buf, buf_len = [], 0
-                        for pos in range(0, len(w), _CHAR_LIMIT):
-                            pieces.append(w[pos:pos + _CHAR_LIMIT])
-                        continue
-                    added = len(w) + (1 if buf else 0)
-                    if buf_len + added > _CHAR_LIMIT and buf:
-                        pieces.append(" ".join(buf))
-                        buf, buf_len = [w], len(w)
-                    else:
-                        buf.append(w)
-                        buf_len += added
-                if buf:
-                    pieces.append(" ".join(buf))
-                if not pieces:
-                    pieces = [" "]
-                chunk_map.append((len(flat_chunks), len(pieces)))
-                flat_chunks.extend(pieces)
-                logging.debug(
-                    "Ollama embed %s: text #%d (%d chars) split into %d chunks",
-                    self.model_name, len(chunk_map) - 1, len(text), len(pieces),
-                )
+        char_limit = _CHAR_LIMIT_DEFAULT
+        flat_chunks, chunk_map = self._chunk_texts(sanitised, char_limit)
 
         # ── 4. Resolve model name and API base ──────────────────────────────
-        # Strip any recognised provider prefix (ollama/, ollama_chat/, etc.)
         raw_model = self.model_name
         for prefix in ("ollama_chat/", "ollama/"):
             if raw_model.startswith(prefix):
                 raw_model = raw_model[len(prefix):]
                 break
-        model = raw_model  # e.g. "nomic-embed-text"
+        model = raw_model
 
         api_base = self._api_base or os.environ.get(
             "OLLAMA_API_BASE",
             os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
         )
         api_base = api_base.rstrip("/")
-        # Strip trailing API path segments added by misconfigured env vars
         for suffix in ("/api/embed", "/api/embeddings", "/api"):
             if api_base.endswith(suffix):
                 api_base = api_base[: -len(suffix)]
                 break
 
         url = f"{api_base}/api/embed"
-        payload = {"model": model, "input": flat_chunks, "truncate": True}
 
         # ── 5. HTTP call with retry / back-off ──────────────────────────────
         last_exc: Exception = RuntimeError("no attempts made")
-        dim: Optional[int] = None  # discovered on first successful response
+        dim: Optional[int] = None
 
-        for attempt in range(3):
+        _MAX_ATTEMPTS = 5
+
+        for attempt in range(_MAX_ATTEMPTS):
             if attempt:
                 time.sleep(2.0 * attempt)
+
+            payload = {"model": model, "input": flat_chunks, "truncate": True}
             try:
                 resp = httpx.post(url, json=payload, timeout=120.0)
 
                 if resp.status_code != 200:
-                    # Log enough context to diagnose the problem without flooding.
                     sample = [s[:120] for s in flat_chunks[:3]]
                     logging.error(
                         "Ollama embed HTTP %d for model=%r url=%r attempt=%d\n"
@@ -817,7 +840,25 @@ class LiteLLMEmbeddingWrapper(Embeddings):
                         )
 
                     if resp.status_code == 400:
-                        # Bad payload — retrying with the same content won't help.
+                        err_text = resp.text[:500].lower()
+                        is_ctx_error = (
+                            "context length" in err_text
+                            or "input length" in err_text
+                            or "too long" in err_text
+                        )
+                        if is_ctx_error and char_limit > _CHAR_LIMIT_FLOOR:
+                            char_limit = max(char_limit // 2, _CHAR_LIMIT_FLOOR)
+                            logging.warning(
+                                "Ollama embed %s: context-length error, "
+                                "halving char_limit to %d and re-chunking "
+                                "(attempt %d/%d)",
+                                model, char_limit, attempt + 1, _MAX_ATTEMPTS,
+                            )
+                            flat_chunks, chunk_map = self._chunk_texts(
+                                sanitised, char_limit
+                            )
+                            continue
+
                         raise RuntimeError(
                             f"Ollama returned HTTP 400 for model='{model}'. "
                             f"Error: {resp.text[:300]}. "
@@ -825,7 +866,7 @@ class LiteLLMEmbeddingWrapper(Embeddings):
                             f"are valid UTF-8 strings."
                         )
 
-                    resp.raise_for_status()  # 5xx / other → HTTPStatusError
+                    resp.raise_for_status()
 
                 chunk_embeddings: list[list[float]] = resp.json()["embeddings"]
 
@@ -858,17 +899,14 @@ class LiteLLMEmbeddingWrapper(Embeddings):
                 return pooled
 
             except (RuntimeError,) as e:
-                # Our own descriptive errors — surface immediately, no retry.
                 raise
             except httpx.HTTPStatusError as e:
                 last_exc = e
-                # 429 / 503 = transient — retry with back-off
                 if e.response.status_code in (429, 503):
                     continue
                 raise
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_exc = e
-                # Connection problems — retry
 
         raise last_exc
 

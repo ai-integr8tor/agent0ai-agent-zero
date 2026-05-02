@@ -126,6 +126,10 @@ class RecallMemories(Extension):
             )
             return
 
+        _QUERY_CHAR_CAP = 2000
+        if len(query) > _QUERY_CHAR_CAP:
+            query = query[:_QUERY_CHAR_CAP]
+
         # get memory database
         db = await Memory.get(self.agent)
 

@@ -217,7 +217,15 @@ class Memory:
 
         # DB not loaded, create one
         if not db:
-            index = faiss.IndexFlatIP(len(embedder.embed_query("example")))
+            try:
+                index = faiss.IndexFlatIP(len(embedder.embed_query("example")))
+            except Exception as e:
+                logging.error(
+                    "Failed to probe embedding dimension — memory DB cannot be created: %s: %s",
+                    type(e).__name__,
+                    str(e)[:200],
+                )
+                raise
 
             db = MyFaiss(
                 embedding_function=embedder,
@@ -234,7 +242,16 @@ class Memory:
                 PrintStyle.standard("Indexing memories...")
                 if log_item:
                     log_item.stream(progress="\nIndexing memories")
-                db.add_documents(documents=list(docs.values()), ids=list(docs.keys()))
+                try:
+                    db.add_documents(documents=list(docs.values()), ids=list(docs.keys()))
+                except Exception as e:
+                    logging.warning(
+                        "Failed to reindex %d memories (embedding error) — continuing with empty DB: %s: %s",
+                        len(docs),
+                        type(e).__name__,
+                        str(e)[:200],
+                    )
+                    docs = None  # clear so we don't retry
 
             # save DB
             Memory._save_db_file(db, memory_subdir)
@@ -369,12 +386,20 @@ class Memory:
     ) -> list[tuple[Document, float]]:
         comparator = Memory._get_comparator(filter) if filter else None
 
-        return await self.db.asimilarity_search_with_relevance_scores(
-            query,
-            k=limit,
-            score_threshold=threshold,
-            filter=comparator,
-        )
+        try:
+            return await self.db.asimilarity_search_with_relevance_scores(
+                query,
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
+        except Exception as e:
+            logging.warning(
+                "Memory scored search failed (embedding error) — returning empty results: %s: %s",
+                type(e).__name__,
+                str(e)[:200],
+            )
+            return []
 
     async def delete_documents_by_query(
         self, query: str, threshold: float, filter: str = ""
