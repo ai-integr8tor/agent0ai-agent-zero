@@ -168,6 +168,14 @@ class TTYSession:
 
     async def read(self, timeout=None):
         # Return any decoded text the child produced, or None on timeout
+        # Rebind queue if event loop changed (e.g. after framework restart)
+        if self._buf is not None:
+            try:
+                loop = asyncio.get_running_loop()
+                if self._buf._loop is not loop:
+                    self._buf = asyncio.Queue()
+            except RuntimeError:
+                self._buf = asyncio.Queue()
         try:
             return await asyncio.wait_for(self._buf.get(), timeout)
         except asyncio.TimeoutError:
