@@ -25,7 +25,7 @@ Agent Zero provides several extension points where custom code can be injected:
 - **monologue_end**: Executed at the end of agent monologue
 - **reasoning_stream**: Executed when reasoning stream data is received
 - **response_stream**: Executed when response stream data is received
-- **system_prompt**: Executed when system prompts are processed
+- **system_prompt**: Executed when system prompts are processed — split into focused extensions (see below)
 
 #### Extension Mechanism
 The extension mechanism in Agent Zero works through the `call_extensions` function in `agent.py`, which:
@@ -48,7 +48,7 @@ To create a custom extension:
 
 ```python
 # File: /agents/_example/extensions/agent_init/_10_example_extension.py
-from python.helpers.extension import Extension
+from helpers.extension import Extension
 
 class ExampleExtension(Extension):
     async def execute(self, **kwargs):
@@ -65,6 +65,49 @@ For example, if both these files exist:
 
 The version in `/agents/my_agent/extensions/agent_init/example.py` will be used, completely replacing the default version.
 
+#### System Prompt Extensions
+The system prompt is built by multiple focused extensions in `extensions/python/system_prompt/`, each handling one concern:
+
+| Extension | Section | Decorator |
+|-----------|---------|-----------|
+| `_10_main_prompt.py` | Main system manual | `@extensible` |
+| `_11_tools_prompt.py` | Tool instructions + vision | `@extensible` |
+| `_12_mcp_prompt.py` | MCP server tools | `@extensible` |
+| `_13_skills_prompt.py` | Available skills | `@extensible` |
+| `_13_secrets_prompt.py` | Secrets and variables | `@extensible` |
+| `_14_project_prompt.py` | Project context | `@extensible` |
+
+Each extension exposes a top-level `build_prompt(agent)` function decorated with `@extensible`, which auto-creates implicit `start` and `end` extension folders. Plugins can hook into these to modify the prompt before or after it's built.
+
+The implicit path is composed from the function's full module path and full nested `__qualname__` path:
+
+- `_functions/<module path>/<qualname path>/start`
+- `_functions/<module path>/<qualname path>/end`
+
+For example, a top-level function `build_prompt` in module `extensions.python.system_prompt._10_main_prompt` maps to:
+
+- `extensions/python/_functions/extensions/python/system_prompt/_10_main_prompt/build_prompt/start/`
+- `extensions/python/_functions/extensions/python/system_prompt/_10_main_prompt/build_prompt/end/`
+
+For nested callables, every namespace-like segment is kept. For example, `helpers.something -> Outer.Inner.__init__` maps to:
+
+- `_functions/helpers/something/Outer/Inner/__init__/start`
+- `_functions/helpers/something/Outer/Inner/__init__/end`
+
+This deep directory structure avoids collisions between functions that previously would have been flattened into the same extension point name.
+
+Numbers `_10`–`_14` run before plugin extensions (which start at `_15`+), ensuring core prompt sections are built first.
+
+**Tool prompt collection:** `_11_tools_prompt.py` collects all `agent.system.tool.*.md` files from the full directory hierarchy via `subagents.get_paths`. Plugins that need to pass config values to their tool prompts can register per-file kwargs on `agent.data["_tool_prompt_kwargs"]` from an earlier-numbered extension:
+
+```python
+# plugins/my_plugin/extensions/python/system_prompt/_09_my_config.py
+class MyConfig(Extension):
+    async def execute(self, **kwargs):
+        tool_kwargs = self.agent.data.setdefault("_tool_prompt_kwargs", {})
+        tool_kwargs["agent.system.tool.my_tool.md"] = {"my_var": "value"}
+```
+
 ### Tools
 Tools are modular components that provide specific functionality to agents. They are invoked by the agent through tool calls in the LLM response. Tools are discovered dynamically and can be extended or overridden.
 
@@ -80,7 +123,7 @@ When a tool with the same name is requested, Agent Zero first checks for its exi
 
 ```python
 # File: /agents/_example/tools/response.py
-from python.helpers.tool import Tool, Response
+from helpers.tool import Tool, Response
 
 # example of a tool redefinition
 # the original response tool is in python/tools/response.py
@@ -145,8 +188,8 @@ When a prompt file is processed, Agent Zero automatically looks for a correspond
 If you have a prompt file `agent.system.tools.md`, you can create `agent.system.tools.py` alongside it:
 
 ```python
-from python.helpers.files import VariablesPlugin
-from python.helpers import files
+from helpers.files import VariablesPlugin
+from helpers import files
 
 class Tools(VariablesPlugin):
     def get_variables(self, file: str, backup_dirs: list[str] | None = None) -> dict[str, Any]:
@@ -188,6 +231,42 @@ Prompts can include content from other prompt files using the `{{ include "path/
 {{ include "agent.system.main.communication.md" }}
 ```
 
+##### Include Original
+When overriding a prompt file, you can **extend** the original instead of replacing it entirely using `{{include original}}`. This finds the same filename in the next lower-priority directory and includes its content.
+
+**Example:** Override `agents/developer/prompts/agent.system.main.communication.md`:
+```markdown
+{{include original}}
+
+- always explain your reasoning
+- include code snippets in responses
+```
+
+This resolves to: find `agent.system.main.communication.md` in the next directory up the hierarchy → finds the default in `prompts/` → includes it. Result:
+
+```markdown
+## Communication
+- be concise
+- use markdown formatting
+- ask clarifying questions when unsure
+
+- always explain your reasoning
+- include code snippets in responses
+```
+
+The override stays small and automatically inherits any future changes to the default file. Works at any level of the hierarchy — if multiple overrides each use `{{include original}}`, they chain together from highest to lowest priority.
+
+##### Agent Specifics File
+The default `agent.system.main.md` includes `agent.system.main.specifics.md` — an empty file by default. Subagent profiles can override just this file to add profile-specific instructions without touching role, communication, or other sections.
+
+**Example:** `agents/developer/prompts/agent.system.main.specifics.md`:
+```markdown
+## Developer specifics
+- always use git branches for new features
+- prefer Python 3.12+ syntax
+- run tests before committing
+```
+
 #### Prompt Override Logic
 Similar to extensions and tools, prompts follow an override pattern. When the agent reads a prompt, it first checks for its existence in the agent-specific prompts directory. If found, that version is used. If not found, it falls back to the default prompts directory.
 
@@ -211,21 +290,26 @@ Agent Zero supports creating specialized subagents with customized behavior. The
 
 ### Creating a Subagent
 
-1. Create a directory in `/agents/{agent_profile}/`
+1. Create a directory in `/usr/agents/{agent_profile}/` for user-created profiles, or `/agents/{agent_profile}/` only for built-in framework profiles.
 2. Override or extend default components by mirroring the structure in the root directories:
-   - `/agents/{agent_profile}/extensions/` - for custom extensions
-   - `/agents/{agent_profile}/tools/` - for custom tools
-   - `/agents/{agent_profile}/prompts/` - for custom prompts
-   - `/agents/{agent_profile}/settings.json` - for agent-specific configuration overrides
+   - `/usr/agents/{agent_profile}/agent.yaml` - required profile metadata
+   - `/usr/agents/{agent_profile}/extensions/` - custom extensions
+   - `/usr/agents/{agent_profile}/tools/` - custom tools
+   - `/usr/agents/{agent_profile}/prompts/` - custom prompts
 
-The `settings.json` file for an agent uses the same structure as `usr/settings.json`, but you only need to specify the fields you want to override. Any field omitted from the agent-specific `settings.json` will continue to use the global value.
+Model settings are not stored in `agent.yaml` or profile `settings.json`. Main, Utility, and Embedding model configuration is handled by the `_model_config` plugin. For a user-created profile, profile-scoped model settings live at:
 
-This allows power users to, for example, change the AI model, context window size, or other settings for a single agent without affecting the rest of the system.
+```text
+/a0/usr/agents/{agent_profile}/plugins/_model_config/config.json
+```
+
+Scoped `_model_config/config.json` files are selected as a whole, not deep-merged with global settings. If you create one, include a complete effective config with `chat_model`, `utility_model`, and `embedding_model`. See the [Agent Profiles guide](../guides/agent-profiles.md) for details.
 
 ### Example Subagent Structure
 
 ```
-/agents/_example/
+/usr/agents/my-profile/
+├── agent.yaml
 ├── extensions/
 │   └── agent_init/
 │       └── _10_example_extension.py
@@ -234,14 +318,16 @@ This allows power users to, for example, change the AI model, context window siz
 ├── tools/
 │   ├── example_tool.py
 │   └── response.py
-└── settings.json
+└── plugins/
+    └── _model_config/
+        └── config.json
 ```
 
 In this example:
 - `_10_example_extension.py` is an extension that renames the agent when initialized
 - `response.py` overrides the default response tool with custom behavior
 - `example_tool.py` is a new tool specific to this agent
-- `settings.json` overrides any global settings for this specific agent (only for the fields defined in this file)
+- `plugins/_model_config/config.json` optionally gives this profile its own Main, Utility, and Embedding model settings
 
 ## Projects
 
@@ -264,6 +350,7 @@ Each project directory contains a hidden `.a0proj` folder with project metadata 
     ├── instructions/         # additional prompt/instruction files
     ├── knowledge/            # files to be imported into memory
     ├── memory/               # project-specific memory storage
+    ├── plugins/              # project-scoped plugin configuration
     ├── secrets.env           # sensitive variables (secrets)
     └── variables.env         # non-sensitive variables
 ```
@@ -289,6 +376,25 @@ Each project manages its own configuration values via environment files in `.a0p
 - `variables.env` – **non-sensitive variables**, such as configuration flags or identifiers
 
 These files allow you to keep credentials and configuration tightly scoped to a single project.
+
+Plugin-owned project configuration is stored under `.a0proj/plugins/<plugin_name>/`. For example, `_model_config` stores project model settings and project-only presets here:
+
+```text
+/a0/usr/projects/{project_name}/.a0proj/plugins/_model_config/config.json
+/a0/usr/projects/{project_name}/.a0proj/plugins/_model_config/presets.yaml
+```
+
+The `_model_config/presets.yaml` file is a plain YAML list:
+
+```yaml
+- name: Research
+  chat:
+    provider: openrouter
+    name: anthropic/claude-sonnet-4.6
+  utility:
+    provider: openrouter
+    name: openai/gpt-5.4-mini
+```
 
 ### When to Use Projects
 
