@@ -156,11 +156,11 @@ class SchedulerTool(Tool):
         dedicated_context: bool = kwargs.get("dedicated_context", False)
 
         task_schedule = TaskSchedule(
-            minute=schedule.get("minute", "*"),
-            hour=schedule.get("hour", "*"),
-            day=schedule.get("day", "*"),
-            month=schedule.get("month", "*"),
-            weekday=schedule.get("weekday", "*"),
+            minute=str(schedule.get("minute", "*")),
+            hour=str(schedule.get("hour", "*")),
+            day=str(schedule.get("day", "*")),
+            month=str(schedule.get("month", "*")),
+            weekday=str(schedule.get("weekday", "*")),
         )
 
         # Validate cron expression, agent might hallucinate
