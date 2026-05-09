@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import os
 import threading
+from collections.abc import Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any, Callable, Iterable, Literal, cast
+from typing import Any, Callable, Literal, cast
+
 from watchdog.observers import Observer as _WatchdogObserver
+
+from helpers.exclusion import get_noise_folders
 
 
 class _DispatchHandler:
@@ -25,8 +30,6 @@ PatternMatcher = Callable[[str], bool]
 
 _DEFAULT_PATTERNS = ["**/*"]
 _DEFAULT_IGNORE_PATTERNS = [
-    "**/__pycache__",
-    "**/__pycache__/*",
     "**/*.pyc",
     "**/*.pyo",
 ]
@@ -41,6 +44,15 @@ _EVENT_ALIASES: dict[str, WatchEvent] = {
     "move": "move",
     "moved": "move",
 }
+
+
+def _iter_watchable_dirs(root: str) -> list[str]:
+    excluded = get_noise_folders()
+    result = [root]
+    for dirpath, dirnames, _ in os.walk(root, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in excluded]
+        result.extend(os.path.join(dirpath, d) for d in dirnames)
+    return result
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,7 @@ class _WatchRegistry:
         self._watch_ids_by_group: dict[str, set[str]] = {}
         self._scheduled_roots: set[str] = set()
         self._pending_batches: dict[str, _PendingBatch] = {}
+        self._batching: bool = False
 
     def add(
         self,
@@ -82,7 +95,7 @@ class _WatchRegistry:
         handler: WatchHandler,
     ) -> None:
         self._ensure_watchdog_available()
-        normalized_roots = _normalize_roots(roots)
+        normalized_roots = [r for r in _normalize_roots(roots) if not _is_9p_mount(r)]
         normalized_patterns = _normalize_patterns(patterns)
         normalized_ignore_patterns = _normalize_patterns(
             ignore_patterns, default=_DEFAULT_IGNORE_PATTERNS
@@ -117,7 +130,8 @@ class _WatchRegistry:
                     pending.timer.cancel()
             self._watches.update(watches)
             self._watch_ids_by_group[id] = set(watches)
-            self._refresh_observer()
+            if not self._batching:
+                self._refresh_observer()
 
     def remove(self, id: str) -> bool:
         with self._lock:
@@ -128,7 +142,7 @@ class _WatchRegistry:
                 pending = self._pending_batches.pop(watch_id, None)
                 if pending and pending.timer:
                     pending.timer.cancel()
-            if removed:
+            if removed and not self._batching:
                 self._refresh_observer()
             return removed
 
@@ -138,7 +152,8 @@ class _WatchRegistry:
             self._watch_ids_by_group.clear()
             pending_batches = list(self._pending_batches.values())
             self._pending_batches.clear()
-            self._refresh_observer()
+            if not self._batching:
+                self._refresh_observer()
         for pending in pending_batches:
             if pending.timer:
                 pending.timer.cancel()
@@ -182,6 +197,10 @@ class _WatchRegistry:
                 if not watch.matcher(path):
                     continue
                 self._queue_event(watch, path, event_type)
+        if event_type in ("create", "move") and bool(getattr(event, "is_directory", False)):
+            src_path = getattr(event, "src_path", None)
+            if isinstance(src_path, str) and os.path.basename(src_path) not in get_noise_folders():
+                threading.Thread(target=self._refresh_observer, daemon=True).start()
 
     def _ensure_watchdog_available(self) -> None:
         return None
@@ -229,13 +248,14 @@ class _WatchRegistry:
             observer = self._create_observer()
             self._observer = observer
             observer.start()
-        if target_roots == self._scheduled_roots:
+        dir_set = set(d for root in target_roots for d in _iter_watchable_dirs(root))
+        if dir_set == self._scheduled_roots:
             return
         observer = cast(Any, observer)
         observer.unschedule_all()
-        for root in target_roots:
-            observer.schedule(_DispatchHandler(self, root), root, recursive=True)
-        self._scheduled_roots = target_roots
+        for dir_path in dir_set:
+            observer.schedule(_DispatchHandler(self, dir_path), dir_path, recursive=False)
+        self._scheduled_roots = dir_set
 
     def _stop_observer(self) -> None:
         with self._lock:
@@ -251,6 +271,15 @@ class _WatchRegistry:
     def _create_observer(self) -> Any:
         observer = cast(Any, _WatchdogObserver())
         return observer
+
+    @contextmanager
+    def batch(self):
+        self._batching = True
+        try:
+            yield
+        finally:
+            self._batching = False
+            self._refresh_observer()
 
 
 def _normalize_root(root: str) -> str:
@@ -310,6 +339,31 @@ def _covering_roots(roots: Iterable[str]) -> set[str]:
             continue
         covered.add(root)
     return covered
+
+
+def _is_9p_mount(path: str) -> bool:
+    """
+    Check if path resides on a 9p remote filesystem
+    Related: https://github.com/microsoft/WSL/issues/4739
+    """
+    path = os.path.realpath(path)
+    best = ""
+    try:
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                mountpoint, fstype = parts[1], parts[2]
+                if fstype != "9p":
+                    continue
+                real_mp = os.path.realpath(mountpoint)
+                if path.startswith(real_mp + os.sep) or path == real_mp:
+                    if len(real_mp) > len(best):
+                        best = real_mp
+    except OSError:
+        return False
+    return bool(best)
 
 
 def _is_same_or_nested(path: str, root: str) -> bool:
@@ -400,6 +454,10 @@ def clear_watchdogs() -> None:
     _registry.clear()
 
 
+def batch_watchdogs():
+    return _registry.batch()
+
+
 def start_watchdog_daemon() -> None:
     _registry.start()
 
@@ -416,6 +474,7 @@ __all__ = [
     "add_watchdog",
     "remove_watchdog",
     "clear_watchdogs",
+    "batch_watchdogs",
     "start_watchdog_daemon",
     "stop_watchdog_daemon",
 ]
