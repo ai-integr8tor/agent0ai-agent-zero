@@ -1,9 +1,12 @@
 import os
 import sys
-from helpers import runtime
+import threading
+
 from helpers.print_style import PrintStyle
 
 _server = None
+_reload_lock = threading.Lock()
+_reloading = False
 
 def set_server(server):
     global _server
@@ -20,11 +23,15 @@ def stop_server():
         _server = None
 
 def reload():
+    global _reloading
+    with _reload_lock:
+        if _reloading:
+            PrintStyle.hint("Reload already in progress; ignoring duplicate request.")
+            return
+        _reloading = True
+
     stop_server()
-    if runtime.is_dockerized():
-        exit_process()
-    else:
-        restart_process()
+    restart_process()
 
 def restart_process():
     PrintStyle.standard("Restarting process...")
@@ -33,4 +40,4 @@ def restart_process():
 
 def exit_process():
     PrintStyle.standard("Exiting process...")
-    sys.exit(0)
+    os._exit(0)

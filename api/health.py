@@ -13,7 +13,7 @@ class HealthCheck(ApiHandler):
 
     @classmethod
     def get_methods(cls) -> list[str]:
-        return ["GET", "POST"]
+        return ["GET", "POST", "HEAD"]
 
     async def process(self, input: dict, request: Request) -> dict | Response:
         gitinfo = None
