@@ -3,10 +3,10 @@ from helpers import plugins
 
 class PluginsList(ApiHandler):
     async def process(self, input: Input, request: Request) -> Output:
-        filter = input.get("filter", {})
+        filter = input.get("filter") or {}
 
-        custom = filter.get("custom", False)
-        builtin = filter.get("builtin", False)
+        custom = filter.get("custom", True)
+        builtin = filter.get("builtin", True)
 
         plugin_list = plugins.get_enhanced_plugins_list(custom=custom, builtin=builtin)
         

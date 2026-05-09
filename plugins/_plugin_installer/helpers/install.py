@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import json
 import os
 import time
-from turtle import stamp
 import urllib.request
 import uuid
 import zipfile
