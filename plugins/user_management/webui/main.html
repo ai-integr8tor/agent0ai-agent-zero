@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management</title>
+    <script type="module">
+        import { store } from "/plugins/user_management/webui/um-store.js";
+        import { store as adminStore } from "/plugins/user_management/webui/admin-store.js";
+    </script>
+</head>
+<body>
+<div x-data>
+
+    <!-- ADMIN PANEL: shown ONLY when logged in AND role is admin -->
+    <template x-if="$store.umUser && $store.umUser.isLoggedIn && $store.umUser.isAdmin()">
+        <div>
+            <x-component path="/plugins/user_management/webui/admin-panel.html"></x-component>
+        </div>
+    </template>
+
+    <!-- ACCESS DENIED: shown when logged in but NOT admin -->
+    <template x-if="$store.umUser && $store.umUser.isLoggedIn && !$store.umUser.isAdmin()">
+        <div style="max-width:400px; margin:60px auto; text-align:center; padding:32px;">
+            <span class="material-symbols-outlined"
+                  style="font-size:48px; color:#e74c3c; opacity:0.7;">
+                lock
+            </span>
+            <h2 style="margin:16px 0 8px 0;">Access Restricted</h2>
+            <p style="opacity:0.6; font-size:14px;">
+                The User Management panel is available to administrators only.
+            </p>
+            <p style="opacity:0.4; font-size:12px; margin-top:16px;">
+                Logged in as: <strong x-text="$store.umUser.currentUser?.username"></strong>
+                (<span x-text="$store.umUser.currentUser?.role"></span>)
+            </p>
+        </div>
+    </template>
+
+    <!-- NOT LOGGED IN: should not happen with unified login, but handle gracefully -->
+    <template x-if="$store.umUser && !$store.umUser.isLoggedIn && $store.umUser._initialized">
+        <div style="max-width:400px; margin:60px auto; text-align:center; padding:32px;">
+            <span class="material-symbols-outlined"
+                  style="font-size:48px; opacity:0.5;">
+                account_circle
+            </span>
+            <h2 style="margin:16px 0 8px 0;">Not Logged In</h2>
+            <p style="opacity:0.6; font-size:14px;">
+                Please log in through the main login page to access this panel.
+            </p>
+        </div>
+    </template>
+
+</div>
+</body>
+</html>

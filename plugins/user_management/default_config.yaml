@@ -1,0 +1,3 @@
+db_url: "postgresql://postgres:HiowQBnoeHWplBkJSivq8D9KFqtJuxooD1sPXr97S7LCqLPJS6aeFdqtHz6DHrJ9@ssi2b2w61m4qo6hc1tq5bi20:5432/postgres"
+admin_username: "admin"
+admin_default_password: "admin123"

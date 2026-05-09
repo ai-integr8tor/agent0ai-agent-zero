@@ -1,0 +1,8 @@
+name: user_management
+title: User Management
+description: Multi-user authentication, chat isolation, and token usage tracking with PostgreSQL.
+version: 1.0.0
+settings_sections:
+  - external
+per_project_config: false
+per_agent_config: false
