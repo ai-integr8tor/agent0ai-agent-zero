@@ -398,9 +398,9 @@ export async function applySnapshot(snapshot, options = {}) {
             setContext(firstChatId);
             chatsStore.setSelected(firstChatId);
           }
-        } else if (typeof deselectChat === "function") {
+        } else {
           // No contexts remain – clear state so the welcome screen can surface
-          deselectChat();
+          chatsStore.deselectChat();
         }
       }
     } else {
@@ -583,18 +583,7 @@ export const setContext = function (id) {
   }
 };
 
-export const deselectChat = function () {
-  // Clear current context to show welcome screen
-  setContext(null);
 
-  // Clear selections so we don't auto-restore
-  sessionStorage.removeItem("lastSelectedChat");
-  sessionStorage.removeItem("lastSelectedTask");
-
-  // Clear the chat history
-  chatHistory.innerHTML = "";
-};
-globalThis.deselectChat = deselectChat;
 
 export const getContext = function () {
   return context;

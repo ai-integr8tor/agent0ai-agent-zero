@@ -37,7 +37,7 @@
           <span class="material-symbols-outlined" aria-hidden="true">menu</span>
         </button>
 
-        <button class="config-button header-action-button" id="header-dashboard" @click="deselectChat()" title="Dashboard" aria-label="Dashboard" tabindex="-1">
+        <button class="config-button header-action-button" id="header-dashboard" @click="$store.chats.deselectChat()" title="Dashboard" aria-label="Dashboard" tabindex="-1">
           <span class="material-symbols-outlined" aria-hidden="true">home</span>
         </button>
 
@@ -73,7 +73,7 @@
 
         <div class="dropdown-header">Navigation</div>
 
-        <button class="dropdown-item" @click="deselectChat(); $store.sidebar.menuClose()">
+        <button class="dropdown-item" @click="$store.chats.deselectChat(); $store.sidebar.menuClose()">
           <span class="material-symbols-outlined">home</span>
           <span>Dashboard</span>
         </button>

@@ -178,7 +178,16 @@ const model = {
   },
 
   deselectChat(){
-    globalThis.deselectChat(); //TODO move here
+    // Clear current context to show welcome screen
+    setContext(null);
+
+    // Clear selections so we don't auto-restore
+    sessionStorage.removeItem("lastSelectedChat");
+    sessionStorage.removeItem("lastSelectedTask");
+
+    // Clear the chat history
+    const chatHistory = document.getElementById("chat-history");
+    if (chatHistory) chatHistory.innerHTML = "";
   },
 
   // Smoothly scroll the chats list to top if present
