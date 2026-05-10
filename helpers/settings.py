@@ -508,9 +508,7 @@ def _apply_settings(previous: Settings | None):
 
         # reload whisper model if necessary
         if not previous or _settings["stt_model_size"] != previous["stt_model_size"]:
-            task = defer.DeferredTask().start_task(
-                whisper.preload, _settings["stt_model_size"]
-            )  # TODO overkill, replace with background task
+            defer.background_task(whisper.preload, _settings["stt_model_size"])
 
         # update mcp settings if necessary
         if not previous or _settings["mcp_servers"] != previous["mcp_servers"]:
@@ -565,9 +563,7 @@ def _apply_settings(previous: Settings | None):
                     group="settings-mcp"
                 )
 
-            task2 = defer.DeferredTask().start_task(
-                update_mcp_settings, config.mcp_servers
-            )  # TODO overkill, replace with background task
+            defer.background_task(update_mcp_settings, config.mcp_servers)
 
         # update token in mcp server
         current_token = (
@@ -580,9 +576,7 @@ def _apply_settings(previous: Settings | None):
 
                 DynamicMcpProxy.get_instance().reconfigure(token=token)
 
-            task3 = defer.DeferredTask().start_task(
-                update_mcp_token, current_token
-            )  # TODO overkill, replace with background task
+            defer.background_task(update_mcp_token, current_token)
 
         # update token in a2a server
         if not previous or current_token != previous["mcp_server_token"]:
@@ -592,9 +586,7 @@ def _apply_settings(previous: Settings | None):
 
                 DynamicA2AProxy.get_instance().reconfigure(token=token)
 
-            task4 = defer.DeferredTask().start_task(
-                update_a2a_token, current_token
-            )  # TODO overkill, replace with background task
+            defer.background_task(update_a2a_token, current_token)
 
 
 def _env_to_dict(data: str):
