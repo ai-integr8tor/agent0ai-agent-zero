@@ -175,12 +175,11 @@ class Topic(Record):
         )
         large_msgs = []
         for m in (m for m in self.messages if not m.summary):
-            # TODO refactor this
-            out = m.output()
-            text = output_text(out)
             tok = m.get_tokens()
-            leng = len(text)
             if tok > msg_max_size:
+                out = m.output()
+                text = m.output_text()
+                leng = len(text)
                 large_msgs.append((m, tok, leng, out))
         large_msgs.sort(key=lambda x: x[1], reverse=True)
         for msg, tok, leng, out in large_msgs:
