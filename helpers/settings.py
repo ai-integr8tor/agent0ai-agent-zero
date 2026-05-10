@@ -317,6 +317,7 @@ def set_settings(settings: Settings, apply: bool = True):
     previous = _settings
     _settings = normalize_settings(settings)
     _write_settings_file(_settings)
+    _settings["mcp_server_token"] = create_auth_token()
     if apply:
         _apply_settings(previous)
     return reload_settings()
@@ -570,9 +571,7 @@ def _apply_settings(previous: Settings | None):
             )  # TODO overkill, replace with background task
 
         # update token in mcp server
-        current_token = (
-            create_auth_token()
-        )  # TODO - ugly, token in settings is generated from dotenv and does not always correspond
+        current_token = _settings["mcp_server_token"]
         if not previous or current_token != previous["mcp_server_token"]:
 
             async def update_mcp_token(token: str):
