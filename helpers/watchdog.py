@@ -130,8 +130,8 @@ class _WatchRegistry:
                     pending.timer.cancel()
             self._watches.update(watches)
             self._watch_ids_by_group[id] = set(watches)
-            if not self._batching:
-                self._refresh_observer()
+        if not self._batching:
+            self._refresh_observer()
 
     def remove(self, id: str) -> bool:
         with self._lock:
@@ -142,9 +142,9 @@ class _WatchRegistry:
                 pending = self._pending_batches.pop(watch_id, None)
                 if pending and pending.timer:
                     pending.timer.cancel()
-            if removed and not self._batching:
-                self._refresh_observer()
-            return removed
+        if removed and not self._batching:
+            self._refresh_observer()
+        return removed
 
     def clear(self) -> None:
         with self._lock:
@@ -152,8 +152,8 @@ class _WatchRegistry:
             self._watch_ids_by_group.clear()
             pending_batches = list(self._pending_batches.values())
             self._pending_batches.clear()
-            if not self._batching:
-                self._refresh_observer()
+        if not self._batching:
+            self._refresh_observer()
         for pending in pending_batches:
             if pending.timer:
                 pending.timer.cancel()
