@@ -1,5 +1,6 @@
 # noqa: D401 (docstrings) – internal helper
 import asyncio
+import os
 import uuid
 import atexit
 from typing import Any, List
@@ -59,6 +60,43 @@ except ImportError:  # pragma: no cover – library not installed
     Message = Artifact = AgentProvider = Skill = Any  # type: ignore
 
 _PRINTER = PrintStyle(italic=True, font_color="purple", padding=False)
+FAILURE_REASON_MAX_CHARS = 300
+
+
+def _task_result_timeout_seconds() -> float:
+    try:
+        configured = float(os.getenv("A2A_TASK_RESULT_TIMEOUT_SECONDS", "30") or "30")
+    except ValueError:
+        configured = 30.0
+    return max(1.0, min(300.0, configured))
+
+
+TASK_RESULT_TIMEOUT_SECONDS = _task_result_timeout_seconds()
+
+
+def _sanitize_failure_reason(reason: object) -> str:
+    text = " ".join(str(reason).split())
+    if len(text) > FAILURE_REASON_MAX_CHARS:
+        text = text[:FAILURE_REASON_MAX_CHARS].rstrip() + "..."
+    return text or "unknown error"
+
+
+def _build_failure_message(reason: str) -> Message:  # type: ignore
+    return {
+        'role': 'agent',
+        'parts': [{'kind': 'text', 'text': f"Agent Zero A2A task failed: {reason}"}],
+        'kind': 'message',
+        'message_id': str(uuid.uuid4())
+    }
+
+
+def _cleanup_context(context: AgentContext | None, task_id: str, outcome: str) -> None:
+    if not context:
+        return
+    context.reset()
+    AgentContext.remove(context.id)
+    remove_chat(context.id)
+    _PRINTER.print(f"[A2A] Cleaned up {outcome} context {context.id} for task {task_id}")
 
 
 class AgentZeroWorker(Worker):  # type: ignore[misc]
@@ -71,7 +109,9 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
     async def run_task(self, params: Any) -> None:  # params: TaskSendParams
         """Execute a task by processing the message through Agent Zero."""
         context = None
+        task_id = params.get('id', 'unknown') if isinstance(params, dict) else 'unknown'
         try:
+            _PRINTER.print(f"[A2A] Task received: {task_id}")
             task_id = params['id']
             message = params['message']
 
@@ -101,8 +141,41 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
             )
 
             # Process message through Agent Zero (includes response)
+            _PRINTER.print(f"[A2A] Task {task_id}: entering context.communicate")
             task = context.communicate(agent_message)
-            result_text = await task.result()
+            _PRINTER.print(f"[A2A] Task {task_id}: context.communicate returned")
+            _PRINTER.print(
+                f"[A2A] Task {task_id}: awaiting task.result() "
+                f"with timeout {TASK_RESULT_TIMEOUT_SECONDS:g}s"
+            )
+            try:
+                result_text = await asyncio.wait_for(
+                    task.result(),
+                    timeout=TASK_RESULT_TIMEOUT_SECONDS,
+                )
+                _PRINTER.print(f"[A2A] Task {task_id}: task.result() completed")
+            except asyncio.TimeoutError:
+                reason = f"task.result() timed out after {TASK_RESULT_TIMEOUT_SECONDS:g}s"
+                _PRINTER.print(f"[A2A] Task {task_id}: task.result() exception: {reason}")
+                _PRINTER.print(f"[A2A] Task {task_id}: updating task failed")
+                await self.storage.update_task(  # type: ignore[attr-defined]
+                    task_id=task_id,
+                    state='failed',
+                    new_messages=[_build_failure_message(reason)]
+                )
+                _cleanup_context(context, task_id, "timed out")
+                return
+            except Exception as e:
+                reason = f"{type(e).__name__}: {_sanitize_failure_reason(e)}"
+                _PRINTER.print(f"[A2A] Task {task_id}: task.result() exception: {reason}")
+                _PRINTER.print(f"[A2A] Task {task_id}: updating task failed")
+                await self.storage.update_task(  # type: ignore[attr-defined]
+                    task_id=task_id,
+                    state='failed',
+                    new_messages=[_build_failure_message(reason)]
+                )
+                _cleanup_context(context, task_id, "failed")
+                return
 
             # Build A2A message from result
             response_message: Message = {  # type: ignore
@@ -112,6 +185,7 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
                 'message_id': str(uuid.uuid4())
             }
 
+            _PRINTER.print(f"[A2A] Task {task_id}: updating task completed")
             await self.storage.update_task(  # type: ignore[attr-defined]
                 task_id=task_id,
                 state='completed',
@@ -119,25 +193,22 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
             )
 
             # Clean up context like non-persistent MCP chats
-            context.reset()
-            AgentContext.remove(context.id)
-            remove_chat(context.id)
+            _cleanup_context(context, task_id, "completed")
 
             _PRINTER.print(f"[A2A] Completed task {task_id} and cleaned up context")
 
         except Exception as e:
-            _PRINTER.print(f"[A2A] Error processing task {params.get('id', 'unknown')}: {e}")
+            reason = f"{type(e).__name__}: {_sanitize_failure_reason(e)}"
+            _PRINTER.print(f"[A2A] Error processing task {task_id}: {reason}")
+            _PRINTER.print(f"[A2A] Task {task_id}: updating task failed")
             await self.storage.update_task(
-                task_id=params.get('id', 'unknown'),
-                state='failed'
+                task_id=task_id,
+                state='failed',
+                new_messages=[_build_failure_message(reason)]
             )
 
             # Clean up context even on failure to prevent resource leaks
-            if context:
-                context.reset()
-                AgentContext.remove(context.id)
-                remove_chat(context.id)
-                _PRINTER.print(f"[A2A] Cleaned up failed context {context.id}")
+            _cleanup_context(context, task_id, "failed")
 
     async def cancel_task(self, params: Any) -> None:  # params: TaskIdParams
         """Cancel a running task."""
