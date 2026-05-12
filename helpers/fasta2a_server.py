@@ -61,17 +61,23 @@ except ImportError:  # pragma: no cover – library not installed
 
 _PRINTER = PrintStyle(italic=True, font_color="purple", padding=False)
 FAILURE_REASON_MAX_CHARS = 300
+A2A_TASK_RESULT_TIMEOUT_ENV = "A2A_TASK_RESULT_TIMEOUT_SECONDS"
+DEFAULT_TASK_RESULT_TIMEOUT_SECONDS = 30.0
+MAX_TASK_RESULT_TIMEOUT_SECONDS = 120.0
 
 
 def _task_result_timeout_seconds() -> float:
     try:
-        configured = float(os.getenv("A2A_TASK_RESULT_TIMEOUT_SECONDS", "30") or "30")
+        configured = float(
+            os.getenv(
+                A2A_TASK_RESULT_TIMEOUT_ENV,
+                str(DEFAULT_TASK_RESULT_TIMEOUT_SECONDS),
+            )
+            or str(DEFAULT_TASK_RESULT_TIMEOUT_SECONDS)
+        )
     except ValueError:
-        configured = 30.0
-    return max(1.0, min(300.0, configured))
-
-
-TASK_RESULT_TIMEOUT_SECONDS = _task_result_timeout_seconds()
+        configured = DEFAULT_TASK_RESULT_TIMEOUT_SECONDS
+    return max(1.0, min(MAX_TASK_RESULT_TIMEOUT_SECONDS, configured))
 
 
 def _sanitize_failure_reason(reason: object) -> str:
@@ -144,18 +150,19 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
             _PRINTER.print(f"[A2A] Task {task_id}: entering context.communicate")
             task = context.communicate(agent_message)
             _PRINTER.print(f"[A2A] Task {task_id}: context.communicate returned")
+            timeout_seconds = _task_result_timeout_seconds()
             _PRINTER.print(
                 f"[A2A] Task {task_id}: awaiting task.result() "
-                f"with timeout {TASK_RESULT_TIMEOUT_SECONDS:g}s"
+                f"with timeout {timeout_seconds:g}s"
             )
             try:
                 result_text = await asyncio.wait_for(
                     task.result(),
-                    timeout=TASK_RESULT_TIMEOUT_SECONDS,
+                    timeout=timeout_seconds,
                 )
                 _PRINTER.print(f"[A2A] Task {task_id}: task.result() completed")
             except asyncio.TimeoutError:
-                reason = f"task.result() timed out after {TASK_RESULT_TIMEOUT_SECONDS:g}s"
+                reason = f"task.result() timed out after {timeout_seconds:g}s"
                 _PRINTER.print(f"[A2A] Task {task_id}: task.result() exception: {reason}")
                 _PRINTER.print(f"[A2A] Task {task_id}: updating task failed")
                 await self.storage.update_task(  # type: ignore[attr-defined]

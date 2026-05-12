@@ -68,7 +68,7 @@ def _params():
 def patch_runtime(monkeypatch):
     FakeContext.removed = []
     FakeContext.reset_count = 0
-    monkeypatch.setattr(fasta2a_server, "TASK_RESULT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.delenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, raising=False)
     monkeypatch.setattr(fasta2a_server, "AgentContext", FakeContext)
     monkeypatch.setattr(fasta2a_server, "initialize_agent", lambda: object())
     monkeypatch.setattr(fasta2a_server, "remove_chat", lambda context_id: None)
@@ -76,6 +76,7 @@ def patch_runtime(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_task_timeout_marks_task_failed(monkeypatch):
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0.01")
     storage = FakeStorage()
     worker = fasta2a_server.AgentZeroWorker(broker=None, storage=storage)
     monkeypatch.setattr(FakeContext, "communicate", lambda self, message: HangingTask())
@@ -92,6 +93,7 @@ async def test_run_task_timeout_marks_task_failed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_task_result_exception_marks_task_failed(monkeypatch):
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0.01")
     storage = FakeStorage()
     worker = fasta2a_server.AgentZeroWorker(broker=None, storage=storage)
     monkeypatch.setattr(FakeContext, "communicate", lambda self, message: FailingTask())
@@ -105,3 +107,20 @@ async def test_run_task_result_exception_marks_task_failed(monkeypatch):
     assert "\n" not in text
     assert FakeContext.reset_count == 1
     assert FakeContext.removed == ["ctx-test"]
+
+
+def test_task_result_timeout_uses_env_and_clamps(monkeypatch):
+    monkeypatch.delenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, raising=False)
+    assert fasta2a_server._task_result_timeout_seconds() == 30.0
+
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "120")
+    assert fasta2a_server._task_result_timeout_seconds() == 120.0
+
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "999")
+    assert fasta2a_server._task_result_timeout_seconds() == 120.0
+
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0")
+    assert fasta2a_server._task_result_timeout_seconds() == 1.0
+
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "not-a-number")
+    assert fasta2a_server._task_result_timeout_seconds() == 30.0
