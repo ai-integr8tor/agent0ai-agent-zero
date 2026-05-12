@@ -25,13 +25,29 @@ class FakeLog:
         pass
 
 
+class FakeHistory:
+    def __init__(self):
+        self.messages = []
+
+    def output(self):
+        return list(self.messages)
+
+
+class FakeAgent:
+    def __init__(self):
+        self.history = FakeHistory()
+
+
 class FakeContext:
     removed = []
     reset_count = 0
+    latest = None
 
     def __init__(self, cfg, type):
         self.id = "ctx-test"
         self.log = FakeLog()
+        self.agent0 = FakeAgent()
+        FakeContext.latest = self
 
     def reset(self):
         FakeContext.reset_count += 1
@@ -54,6 +70,11 @@ class FailingTask:
         raise RuntimeError("boom\nwith details")
 
 
+class CompletedTask:
+    async def result(self):
+        return "final response"
+
+
 def _params():
     return {
         "id": "task-123",
@@ -68,6 +89,7 @@ def _params():
 def patch_runtime(monkeypatch):
     FakeContext.removed = []
     FakeContext.reset_count = 0
+    FakeContext.latest = None
     monkeypatch.delenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, raising=False)
     monkeypatch.setattr(fasta2a_server, "AgentContext", FakeContext)
     monkeypatch.setattr(fasta2a_server, "initialize_agent", lambda: object())
@@ -92,6 +114,37 @@ async def test_run_task_timeout_marks_task_failed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_task_timeout_after_tool_output_completes_with_artifact(monkeypatch):
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0.01")
+    storage = FakeStorage()
+    worker = fasta2a_server.AgentZeroWorker(broker=None, storage=storage)
+
+    def communicate(self, message):
+        self.agent0.history.messages.append({
+            "ai": False,
+            "content": {
+                "tool_name": "code_execution_tool",
+                "tool_result": "connected\n",
+            },
+        })
+        return HangingTask()
+
+    monkeypatch.setattr(FakeContext, "communicate", communicate)
+
+    await worker.run_task(_params())
+
+    assert storage.updates[-1]["task_id"] == "task-123"
+    assert storage.updates[-1]["state"] == "completed"
+    artifact = storage.updates[-1]["new_artifacts"][0]
+    assert artifact["name"] == "captured_tool_output"
+    assert artifact["metadata"]["tool_name"] == "code_execution_tool"
+    assert artifact["parts"] == [{"kind": "text", "text": "connected"}]
+    assert "new_messages" not in storage.updates[-1]
+    assert FakeContext.reset_count == 1
+    assert FakeContext.removed == ["ctx-test"]
+
+
+@pytest.mark.asyncio
 async def test_run_task_result_exception_marks_task_failed(monkeypatch):
     monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0.01")
     storage = FakeStorage()
@@ -105,6 +158,25 @@ async def test_run_task_result_exception_marks_task_failed(monkeypatch):
     text = storage.updates[-1]["new_messages"][0]["parts"][0]["text"]
     assert "RuntimeError" in text
     assert "\n" not in text
+    assert FakeContext.reset_count == 1
+    assert FakeContext.removed == ["ctx-test"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_final_response_completes_normally(monkeypatch):
+    monkeypatch.setenv(fasta2a_server.A2A_TASK_RESULT_TIMEOUT_ENV, "0.01")
+    storage = FakeStorage()
+    worker = fasta2a_server.AgentZeroWorker(broker=None, storage=storage)
+    monkeypatch.setattr(FakeContext, "communicate", lambda self, message: CompletedTask())
+
+    await worker.run_task(_params())
+
+    assert storage.updates[-1]["task_id"] == "task-123"
+    assert storage.updates[-1]["state"] == "completed"
+    message = storage.updates[-1]["new_messages"][0]
+    assert message["role"] == "agent"
+    assert message["parts"] == [{"kind": "text", "text": "final response"}]
+    assert "new_artifacts" not in storage.updates[-1]
     assert FakeContext.reset_count == 1
     assert FakeContext.removed == ["ctx-test"]
 

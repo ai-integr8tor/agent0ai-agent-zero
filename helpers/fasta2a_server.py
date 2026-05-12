@@ -96,6 +96,19 @@ def _build_failure_message(reason: str) -> Message:  # type: ignore
     }
 
 
+def _build_tool_output_artifact(text: str, tool_name: str) -> Artifact:  # type: ignore
+    return {
+        'artifact_id': str(uuid.uuid4()),
+        'name': 'captured_tool_output',
+        'description': f"Captured output from {tool_name}",
+        'parts': [{'kind': 'text', 'text': text}],
+        'metadata': {
+            'source': 'a2a_finalization_timeout_fallback',
+            'tool_name': tool_name,
+        },
+    }
+
+
 def _cleanup_context(context: AgentContext | None, task_id: str, outcome: str) -> None:
     if not context:
         return
@@ -103,6 +116,36 @@ def _cleanup_context(context: AgentContext | None, task_id: str, outcome: str) -
     AgentContext.remove(context.id)
     remove_chat(context.id)
     _PRINTER.print(f"[A2A] Cleaned up {outcome} context {context.id} for task {task_id}")
+
+
+def _get_history_output(context: AgentContext | None) -> list[Any]:
+    if not context:
+        return []
+    try:
+        history = context.agent0.history
+        if hasattr(history, "output"):
+            output = history.output()
+            return output if isinstance(output, list) else []
+    except Exception as e:
+        _PRINTER.print(f"[A2A] Unable to inspect tool output history: {e}")
+    return []
+
+
+def _find_latest_tool_output(context: AgentContext | None) -> tuple[str, str] | None:
+    for message in reversed(_get_history_output(context)):
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, dict):
+            continue
+        tool_result = content.get("tool_result")
+        if not isinstance(tool_result, str) or not tool_result.strip():
+            continue
+        tool_name = content.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            tool_name = "tool"
+        return tool_name, tool_result.strip()
+    return None
 
 
 class AgentZeroWorker(Worker):  # type: ignore[misc]
@@ -164,6 +207,19 @@ class AgentZeroWorker(Worker):  # type: ignore[misc]
             except asyncio.TimeoutError:
                 reason = f"task.result() timed out after {timeout_seconds:g}s"
                 _PRINTER.print(f"[A2A] Task {task_id}: task.result() exception: {reason}")
+                tool_output = _find_latest_tool_output(context)
+                if tool_output:
+                    tool_name, output_text = tool_output
+                    _PRINTER.print(f"[A2A] Task {task_id}: tool output captured from {tool_name}")
+                    _PRINTER.print(f"[A2A] Task {task_id}: final response started but timed out")
+                    _PRINTER.print(f"[A2A] Task {task_id}: artifact fallback used")
+                    await self.storage.update_task(  # type: ignore[attr-defined]
+                        task_id=task_id,
+                        state='completed',
+                        new_artifacts=[_build_tool_output_artifact(output_text, tool_name)]
+                    )
+                    _cleanup_context(context, task_id, "completed with artifact fallback")
+                    return
                 _PRINTER.print(f"[A2A] Task {task_id}: updating task failed")
                 await self.storage.update_task(  # type: ignore[attr-defined]
                     task_id=task_id,
