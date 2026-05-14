@@ -24,7 +24,7 @@
 
         <ul class="config-list chats-config-list no-scrollbar" x-show="$store.chats.contexts.length > 0">
           <template x-for="context in $store.chats.contexts" :key="context.id">
-            <li>
+            <li :data-chat-id="context.id">
               <div :class="{'chat-container': true, 'chat-selected': context.id === $store.chats.selected}"
                 @click="$store.chats.selectChat(context.id)">
                 <div class="chat-list-button">

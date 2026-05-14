@@ -300,6 +300,11 @@ class AgentContext:
             return response
         except Exception as e:
             await self.handle_exception("process_chain", e)
+        finally:
+            # Push updated running state to ALL connections when agent finishes.
+            # Without this, non-active tabs don't see running:false until they click.
+            from helpers.state_monitor_integration import mark_dirty_all
+            mark_dirty_all(reason="agent.AgentContext._process_chain completed")
 
     @extension.extensible
     async def handle_exception(self, location: str, exception: Exception):
