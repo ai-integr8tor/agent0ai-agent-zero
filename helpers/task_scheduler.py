@@ -1035,11 +1035,11 @@ def parse_task_schedule(schedule_data: Dict[str, str]) -> TaskSchedule:
     """Parse dictionary into TaskSchedule with validation."""
     try:
         return TaskSchedule(
-            minute=schedule_data.get('minute', '*'),
-            hour=schedule_data.get('hour', '*'),
-            day=schedule_data.get('day', '*'),
-            month=schedule_data.get('month', '*'),
-            weekday=schedule_data.get('weekday', '*'),
+            minute=str(schedule_data.get('minute', '*')),
+            hour=str(schedule_data.get('hour', '*')),
+            day=str(schedule_data.get('day', '*')),
+            month=str(schedule_data.get('month', '*')),
+            weekday=str(schedule_data.get('weekday', '*')),
             timezone=schedule_data.get('timezone', Localization.get().get_timezone())
         )
     except Exception as e:
