@@ -66,6 +66,21 @@
                   </label>
                 </div>
               </div>
+
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">Lock subagent spawning</div>
+                  <div class="field-description">
+                    Prevent the agent from autonomously spawning new subordinate agents via call_subordinate. Useful for stable, intentionally designed multi-agent pipelines.
+                  </div>
+                </div>
+                <div class="field-control">
+                  <label class="toggle">
+                    <input type="checkbox" x-model="$store.settings.settings.subagent_spawn_locked">
+                    <span class="toggler"> </span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>

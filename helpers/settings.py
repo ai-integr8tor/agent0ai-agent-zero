@@ -102,6 +102,7 @@ class Settings(TypedDict):
 
     update_check_enabled: bool
     chat_inherit_project: bool
+    subagent_spawn_locked: bool
 
 
 class PartialSettings(Settings, total=False):
@@ -487,6 +488,7 @@ def get_default_settings() -> Settings:
         litellm_global_kwargs=get_default_value("litellm_global_kwargs", {}),
         update_check_enabled=get_default_value("update_check_enabled", True),
         chat_inherit_project=get_default_value("chat_inherit_project", True),
+        subagent_spawn_locked=get_default_value("subagent_spawn_locked", False),
     )
 
 

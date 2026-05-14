@@ -1,5 +1,6 @@
 from agent import Agent, UserMessage
 from helpers.tool import Tool, Response
+from helpers import settings
 from initialize import initialize_agent
 from extensions.python.hist_add_tool_result import _90_save_tool_call_file as save_tool_call_file
 
@@ -7,6 +8,20 @@ from extensions.python.hist_add_tool_result import _90_save_tool_call_file as sa
 class Delegation(Tool):
 
     async def execute(self, message="", reset="", **kwargs):
+        # honor the runtime lock that prevents autonomous subagent spawning so a
+        # manually designed multi-agent system stays exactly as built
+        if settings.get_settings().get("subagent_spawn_locked", False):
+            existing = self.agent.get_data(Agent.DATA_NAME_SUBORDINATE)
+            if existing is None or str(reset).lower().strip() == "true":
+                return Response(
+                    message=(
+                        "call_subordinate is locked: autonomous subagent spawning is "
+                        "disabled by the 'subagent_spawn_locked' setting. Continue "
+                        "without delegating, or ask the user to switch the toggle off."
+                    ),
+                    break_loop=False,
+                )
+
         # create subordinate agent using the data object on this agent and set superior agent to his data object
         if (
             self.agent.get_data(Agent.DATA_NAME_SUBORDINATE) is None
