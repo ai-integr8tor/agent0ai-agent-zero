@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from python.surveys.db import SurveyDB
 from python.surveys.parser import parse_survey_page
@@ -54,6 +55,29 @@ class TestSurveyDB(unittest.TestCase):
             self.assertEqual(db.fetch_unprocessed_answer_events(), [])
         finally:
             db.close()
+
+    def test_unprocessed_order_stable_when_created_at_ties(self):
+        """Same-second inserts must not rely on undefined SQLite ordering."""
+        fixed_ts = 1_700_000_000
+        with patch("python.surveys.db._now_ts", return_value=fixed_ts):
+            db = SurveyDB(":memory:")
+            try:
+                persona = Persona(id="p1", name="Test", description="x", constraints={})
+                db.upsert_persona(persona)
+                profile = UserProfile(id="default", persona_id="p1", data={})
+                db.upsert_profile(profile)
+                db.create_session("s1", url="file://demo", persona_id="p1", profile_id="default")
+                field = SurveyField(selector="1a", kind=FieldKind.TEXT, label="Q")
+                # Insert lexicographically later id first; tie-break must still order by id ASC.
+                db.insert_answer("b2", "s1", "Q", field, "second")
+                db.insert_answer("a1", "s1", "Q", field, "first")
+
+                ids_plain = [r["id"] for r in db.fetch_unprocessed_answers()]
+                ids_events = [r["id"] for r in db.fetch_unprocessed_answer_events()]
+                self.assertEqual(ids_plain, ["a1", "b2"])
+                self.assertEqual(ids_events, ["a1", "b2"])
+            finally:
+                db.close()
 
 
 class TestDeepMerge(unittest.TestCase):

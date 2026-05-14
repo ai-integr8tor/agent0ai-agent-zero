@@ -226,7 +226,7 @@ class SurveyDB:
             SELECT id, session_id, question_text, field_kind, selector, answer_text, field_json, raw_json, created_at
             FROM survey_answers
             WHERE processed=0
-            ORDER BY created_at ASC
+            ORDER BY created_at ASC, id ASC
             LIMIT ?
             """,
             (limit,),
@@ -259,7 +259,7 @@ class SurveyDB:
             FROM survey_answers a
             JOIN survey_sessions s ON s.id = a.session_id
             WHERE a.processed=0
-            ORDER BY a.created_at ASC
+            ORDER BY a.created_at ASC, a.id ASC
             LIMIT ?
             """,
             (limit,),
