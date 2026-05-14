@@ -109,6 +109,20 @@ class DeferredTask:
     def _on_task_done(self, _future: Future):
         # Ensure child background tasks are always cleaned up once the parent finishes
         self.kill_children()
+        # Log any exception that killed the task silently
+        exc = _future.exception() if _future else None
+        if exc:
+            from helpers.print_style import PrintStyle
+            PrintStyle.error(f"DeferredTask died with exception: {exc}")
+            # Notify the AgentContext if available so UI can show the error
+            try:
+                from agent import AgentContext
+                ctx = AgentContext.current()
+                if ctx:
+                    ctx.log.log(type="error", content=f"Task failed: {exc}")
+                    ctx.streaming_agent = None
+            except Exception:
+                pass
 
     async def _run(self):
         return await self.func(*self.args, **self.kwargs)

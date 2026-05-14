@@ -1,3 +1,4 @@
+import asyncio
 from helpers.extension import Extension
 from agent import LoopData
 from extensions.python.message_loop_end._10_organize_history import DATA_NAME_TASK
@@ -19,8 +20,8 @@ class OrganizeHistoryWait(Extension):
                 if not task.is_ready():
                     self.agent.context.log.set_progress("Compressing history...")
 
-                # Wait for the task to complete
-                await task.result()
+                # Wait for the task to complete (with timeout to prevent indefinite blocking)
+                await asyncio.wait_for(task.result(), timeout=30)
 
                 # Clear the coroutine data after it's done
                 self.agent.set_data(DATA_NAME_TASK, None)
