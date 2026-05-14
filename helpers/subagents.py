@@ -1,7 +1,7 @@
 from helpers import files
 from helpers import cache
 from helpers import yaml as yaml_helper
-from typing import TypedDict, TYPE_CHECKING, Literal
+from typing import TypedDict, TYPE_CHECKING, Literal, TypeAlias
 from pydantic import BaseModel, model_validator
 import json
 import os
@@ -14,7 +14,7 @@ PATHS_CACHE_AREA = "subagent_paths(plugins)"
 
 cache.toggle_area(PATHS_CACHE_AREA, False)
 
-type Origin = Literal["default", "user", "project", "plugin"]
+Origin: TypeAlias = Literal["default", "user", "project", "plugin"]
 
 if TYPE_CHECKING:
     from agent import Agent
