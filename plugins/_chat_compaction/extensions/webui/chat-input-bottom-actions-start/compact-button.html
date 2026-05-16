@@ -136,6 +136,9 @@
       box-shadow: 0 4px 23px rgba(0, 0, 0, 0.3);
       width: 90%;
       max-width: 560px;
+      max-height: 85dvh;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
     
@@ -145,6 +148,7 @@
       justify-content: space-between;
       padding: 16px 20px;
       border-bottom: 1px solid var(--color-border, #333);
+      flex-shrink: 0;
     }
     
     .cmpct-header h3 {
@@ -170,6 +174,9 @@
     
     .cmpct-body {
       padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
     }
     
     .cmpct-desc {
@@ -317,6 +324,7 @@
       gap: 8px;
       padding: 12px 20px;
       border-top: 1px solid var(--color-border, #333);
+      flex-shrink: 0;
     }
     
     .cmpct-btn {
