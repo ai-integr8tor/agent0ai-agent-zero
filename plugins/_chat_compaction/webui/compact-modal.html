@@ -260,8 +260,8 @@
     }
 
     .model-type-toggle button.active {
-      background: var(--color-primary, #3b82f6);
-      color: white;
+      background: color-mix(in srgb, var(--color-primary) 18%, var(--color-background-muted));
+      color: var(--color-primary);
     }
 
     .model-type-toggle button:hover:not(.active) {
@@ -360,7 +360,7 @@
     .button.primary {
       background: var(--color-primary);
       border: none;
-      color: white;
+      color: var(--color-background);
     }
     
     .button.primary:hover:not(:disabled) {
@@ -368,11 +368,13 @@
     }
     
     .button.danger {
-      background: var(--color-danger, #dc2626);
+      background: color-mix(in srgb, var(--color-error, #dc2626) 16%, var(--color-background-muted));
+      border: 1px solid color-mix(in srgb, var(--color-error, #dc2626) 36%, var(--color-border));
+      color: var(--color-error, #dc2626);
     }
     
     .button.danger:hover:not(:disabled) {
-      background: var(--color-danger-hover, #b91c1c);
+      background: color-mix(in srgb, var(--color-error, #dc2626) 24%, var(--color-background-hover));
     }
     
     .loading-spinner {
