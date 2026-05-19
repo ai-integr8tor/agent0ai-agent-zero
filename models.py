@@ -498,6 +498,10 @@ class LiteLLMChatWrapper(SimpleChatModel):
         if user_message:
             messages.append(HumanMessage(content=user_message))
 
+        # Allow model kwargs to disable explicit caching (for models that don't support it)
+        if self.kwargs.get("a0_explicit_caching") is False or kwargs.get("a0_explicit_caching") is False:
+            explicit_caching = False
+
         # convert to litellm format
         msgs_conv = self._convert_messages(messages, explicit_caching=explicit_caching)
 
@@ -510,6 +514,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
         call_kwargs: dict[str, Any] = _without_stream_kwarg({**self.kwargs, **kwargs})
         max_retries: int = int(call_kwargs.pop("a0_retry_attempts", 2))
         retry_delay_s: float = float(call_kwargs.pop("a0_retry_delay_seconds", 1.5))
+        call_kwargs.pop("a0_explicit_caching", None)  # strip before passing to LiteLLM
         stream = reasoning_callback is not None or response_callback is not None or tokens_callback is not None
 
         # results
