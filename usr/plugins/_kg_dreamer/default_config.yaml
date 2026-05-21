@@ -1,0 +1,50 @@
+dreamer:
+  enabled: true
+  schedule_cron: '0 */6 * * *'
+  timezone: 'America/Chicago'
+  llm_endpoint: 'http://192.168.1.250:11435/v1/chat/completions'
+  llm_model: 'qwen3.6-35b'
+  llm_max_tokens: 4096
+  llm_timeout: 120
+  kg_service_url: 'http://100.78.79.41:8010'
+  kg_timeout: 60
+  operations:
+    connect:
+      enabled: true
+      min_shared_docs: 2
+      max_candidates: 500
+      relationship_type: 'IMPLIED_RELATION'
+    strengthen:
+      enabled: true
+      boost_factor: 1.2
+      decay_factor: 0.95
+      min_queries: 3
+    prune:
+      enabled: true
+      min_age_days: 180
+      max_health_score: 0.1
+      max_queries: 0
+      dry_run: false
+      batch_size: 100
+    contradict:
+      enabled: true
+      property_fields:
+        - 'description'
+        - 'type'
+        - 'category'
+      min_confidence: 0.7
+    pattern:
+      enabled: true
+      min_cluster_size: 3
+      max_clusters: 50
+    insight:
+      enabled: true
+      max_insights: 10
+      min_novelty: 0.6
+  log_dir: '/a0/usr/workdir/logs/kg_dreams'
+  state_file: '/a0/usr/workdir/state/kg_dreamer_state.json'
+  notifications:
+    enabled: true
+    on_insights: true
+    on_contradictions: true
+    on_errors: true

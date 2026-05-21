@@ -1,0 +1,13 @@
+name: _kg_dreamer
+version: 1.0.0
+description: "Autonomous KG intelligence system - background dreaming operations for proactive knowledge discovery"
+author: "Elastic SLED Central"
+depends:
+  - _kg_pipeline
+tools:
+  - name: kg_dreamer
+    description: "Run KG dreaming operations and view dream cycle reports"
+    entry: tools.kg_dreamer:KgDreamer
+config:
+  - name: default_config.yaml
+    description: "Dream cycle schedule, LLM endpoint, operation thresholds"

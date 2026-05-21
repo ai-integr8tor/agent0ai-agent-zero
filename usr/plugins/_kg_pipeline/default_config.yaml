@@ -1,0 +1,44 @@
+kg_service_url: "http://100.78.79.41:8010"
+batch_size: 50
+timeout: 300
+max_retries: 3
+retry_delay: 1.0
+parallel_workers: 3
+elastic_kb_dir: "/a0/usr/workdir/elastic_kb"
+knowledge_dir: "/a0/usr/knowledge"
+ingest_state_file: "/a0/usr/workdir/logs/kg_ingest_state.json"
+log_dir: "/a0/usr/workdir/logs"
+chunk_dir: "/a0/usr/workdir/config"
+orphan_state_file: "/a0/usr/workdir/state/kg_orphan_state.json"
+enrichment_state_file: "/a0/usr/workdir/logs/kg_enrichment_state.json"
+llm_api_url: "http://192.168.1.245:8000/v1"
+llm_model: "default"
+
+audit:
+  enabled: true
+  retention_days: 90
+
+compression:
+  enabled: true
+  min_reduction_pct: 10  # warn if less than 10% reduction
+  llm_enabled: true
+  llm_threshold_chars: 30000
+  llm_max_output_tokens: 4096
+  cache_enabled: true
+  cache_ttl_days: 7
+
+health_scoring:
+  enabled: true
+  cache_ttl_hours: 24
+  tier_thresholds:
+    hot: 0.7
+    warm: 0.5
+    cool: 0.3
+
+entity_resolution:
+  enabled: true
+  string_threshold: 0.80
+  token_overlap_threshold: 0.60
+  llm_verify: true
+  batch_size: 10
+  dry_run_default: true

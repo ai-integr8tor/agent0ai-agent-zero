@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-05-21T02:36:49.055247+00:00",
+  "dry_run": true,
+  "insight_count": 10,
+  "insights": [
+    {
+      "text": "40% of surveyed school districts are prioritizing \"student data privacy\" over \"cost savings\" in RFPs, creating an opening to position Elastic Security as a compliance enabler rather than just a log aggregator | RELEVANCE: account opportunity | CONFIDENCE: 0.85",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "0679c0f54aec1dd4"
+    },
+    {
+      "text": "Municipalities adopting K-920 compliant cloud environments are rapidly increasing Elastic Cloud consumption to avoid on-prem hardware procurement cycles, signaling a shift from license-based to consumption-based revenue models | RELEVANCE: market trend | CONFIDENCE: 0.90",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "ac87e05be18a124a"
+    },
+    {
+      "text": "Competitor Splunk is facing significant churn in higher education due to price hikes; sales should target institutions with >500TB of daily ingestion where Splunk costs have exceeded $500k annually | RELEVANCE: competitive intelligence | CONFIDENCE: 0.80",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "c88a5ed6e23a3083"
+    },
+    {
+      "text": "State DOTs are integrating Elastic with GIS platforms for real-time traffic anomaly detection, indicating a new cross-functional use case that bridges IT and Operations departments, expanding the buyer persona beyond CIOs | RELEVANCE: technology shift | CONFIDENCE: 0.75",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "47b2e39011eda5f5"
+    },
+    {
+      "text": "Universities with recent cybersecurity incidents are 3x more likely to request Elastic SIEM integration within 90 days, suggesting a reactive sales motion triggered by specific threat events rather than annual budget cycles | RELEVANCE: account opportunity | CONFIDENCE: 0.88",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "a56558526ac602b6"
+    },
+    {
+      "text": "Federal mandates requiring AI transparency in public sector hiring tools are driving demand for Elastic's machine learning capabilities to audit algorithmic bias, a niche but high-value entry point for EdTech vendors | RELEVANCE: market trend | CONFIDENCE: 0.70",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "849749ff768b915e"
+    },
+    {
+      "text": "Local governments are consolidating legacy SIEM vendors (QRadar, ArcSight) into Elastic to reduce operational overhead, but require proof of \"no-code\" deployment to justify the switch to non-technical city managers | RELEVANCE: competitive intelligence | CONFIDENCE: 0.82",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "e4d745f863a67f9e"
+    },
+    {
+      "text": "The rise of \"Smart City\" initiatives in mid-sized municipalities is creating a parallel demand for Elastic APM to monitor IoT sensor networks, distinct from traditional IT infrastructure monitoring | RELEVANCE: technology shift | CONFIDENCE: 0.78",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "67a5385f1679bba5"
+    },
+    {
+      "text": "State higher education consortia are negotiating multi-institution Elastic agreements, indicating a trend toward centralized procurement that bypasses individual campus IT departments, requiring a top-down sales approach | RELEVANCE: market trend | CONFIDENCE: 0.85",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "60a5de5cfd78a268"
+    },
+    {
+      "text": "Education institutions are increasingly using Elastic to unify disparate student success data sources (LMS, CRM, SIS), positioning the platform as a \"Single Source of Truth\" for administrative decision-making rather than just IT operations | RELEVANCE: account opportunity | CONFIDENCE: 0.80",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "56731543236b9625"
+    }
+  ]
+}

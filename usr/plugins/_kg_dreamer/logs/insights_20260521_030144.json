@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-05-21T03:01:44.985817+00:00",
+  "dry_run": true,
+  "insight_count": 10,
+  "insights": [
+    {
+      "text": "Leverage the recent StateRAMP addition to target mid-sized state agencies bypassing FedRAMP complexity, positioning Elastic as the compliant alternative to Splunk for state-level data sovereignty needs | RELEVANCE: account opportunity | CONFIDENCE: 0.85",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "64d315affb7f018b"
+    },
+    {
+      "text": "Capitalize on the \"cyber resiliency\" concept emergence by pitching Elastic Security not just for detection, but for rapid recovery and forensic continuity, a key differentiator against legacy SIEMs in the SLED sector | RELEVANCE: market trend | CONFIDENCE: 0.80",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "db759fbe65f60d55"
+    },
+    {
+      "text": "The strong connection between Texas A&M and Elastic Security indicates a successful higher-ed reference account; use this specific case study to penetrate other public university systems facing similar budget and compliance pressures | RELEVANCE: account opportunity | CONFIDENCE: 0.82",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "c797e17c3d04e6d7"
+    },
+    {
+      "text": "Utilize the \"ROI Business Case One-Pager\" and \"HTML Templates\" to accelerate procurement cycles in education districts by providing pre-built, branded assets that reduce internal legal and marketing friction | RELEVANCE: account opportunity | CONFIDENCE: 0.75",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "715084363775f025"
+    },
+    {
+      "text": "The explicit link between Elastic and \"Open Platform\" suggests a strategic wedge against proprietary vendors; position Elastic\u2019s open-source roots as a risk-mitigation strategy for SLED customers fearing vendor lock-in | RELEVANCE: competitive intelligence | CONFIDENCE: 0.78",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "6d95d7fad47ad056"
+    },
+    {
+      "text": "With \"Large Language Model\" and \"Python\" as top hubs, create targeted demos showing how SLED IT teams can use Python scripts to integrate LLMs with Elastic for automated log summarization, appealing to the technical buyer | RELEVANCE: technology shift | CONFIDENCE: 0.88",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "6b7176f48b5fd820"
+    },
+    {
+      "text": "The \"CJIS Security Policy\" connection is critical for state-level law enforcement accounts; ensure sales collateral explicitly maps Elastic Security features to CJIS requirements to overcome procurement blockers in public safety | RELEVANCE: account opportunity | CONFIDENCE: 0.90",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "b911a3aa9488782b"
+    },
+    {
+      "text": "The \"Splunk <-> Elastic\" relationship in the graph highlights direct competitive displacement opportunities; train SLED reps to specifically contrast Elastic\u2019s open platform flexibility against Splunk\u2019s licensing rigidity in state budgets | RELEVANCE: competitive intelligence | CONFIDENCE: 0.85",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "3d0393454e9265c9"
+    },
+    {
+      "text": "The presence of \"brand.elastic.co\" and \"Elastic Brand & Content Guide\" indicates a need for standardized messaging; equip SLED reps with these assets to ensure consistent \"cyber resiliency\" and \"Open Platform\" narratives across diverse government entities | RELEVANCE: market trend | CONFIDENCE: 0.70",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "6379dc00fa68986f"
+    },
+    {
+      "text": "The high volume of \"GitHub\" connections suggests strong developer adoption in education; target university CS departments for pilot programs using Elastic Stack, creating bottom-up adoption that influences broader IT procurement | RELEVANCE: account opportunity | CONFIDENCE: 0.76",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "d3ee089d35e1df0b"
+    }
+  ]
+}

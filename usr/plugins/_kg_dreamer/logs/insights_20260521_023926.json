@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-05-21T02:39:26.940999+00:00",
+  "dry_run": true,
+  "insight_count": 10,
+  "insights": [
+    {
+      "text": "High connectivity between Python skills and LLMs indicates SLED customers are actively building custom RAG pipelines, creating an immediate need for Elastic\u2019s vector search capabilities to handle unstructured data ingestion | RELEVANCE: technology shift | CONFIDENCE: 0.85",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "1aefb5bd13af34f7"
+    },
+    {
+      "text": "The strong link between GitHub and Elastic Stack suggests a growing trend of \"GitOps\" adoption in public sector IT, where sales should pitch Elastic as the observability layer for CI/CD pipelines managing government infrastructure | RELEVANCE: account opportunity | CONFIDENCE: 0.80",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "84e9b6147012455f"
+    },
+    {
+      "text": "YouTube\u2019s high connection count implies a reliance on video analytics for public safety and education; sales should position Elastic\u2019s multimodal search to index video metadata and transcripts for faster incident response | RELEVANCE: market trend | CONFIDENCE: 0.75",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "5c5f9f5130d6c6d9"
+    },
+    {
+      "text": "Large Language Model entities are heavily connected to Python, signaling that SLED agencies are moving from experimental AI to production-grade AI applications, requiring Elastic\u2019s security and compliance features to govern AI usage | RELEVANCE: competitive intelligence | CONFIDENCE: 0.82",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "921cfb3c31b06176"
+    },
+    {
+      "text": "The dominance of Python as both a technology and skill hub reveals that SLED developers prefer open-source, code-first solutions; sales should leverage Elastic\u2019s Python client libraries and developer-friendly APIs to bypass traditional procurement hurdles | RELEVANCE: account opportunity | CONFIDENCE: 0.78",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "4c60e50c5df3cd68"
+    },
+    {
+      "text": "GitHub connections to Elastic Stack suggest that many SLED agencies are using open-source contributions as a proxy for vendor trust; sales should engage with local university CS departments and public sector GitHub organizations to influence early-stage architecture decisions | RELEVANCE: market trend | CONFIDENCE: 0.70",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "7adbe8489660ebf1"
+    },
+    {
+      "text": "The intersection of \"Large Language Model\" and \"Elasticsearch\" indicates a shift toward semantic search over keyword search in education portals; sales should target university libraries and student services for modernization projects | RELEVANCE: account opportunity | CONFIDENCE: 0.88",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "d5b7693d234bd7bb"
+    },
+    {
+      "text": "High volume of \"concept\" entities linked to Python and LLMs suggests a knowledge gap in SLED agencies regarding AI governance; sales can create value by offering \"AI Readiness\" assessments that include Elastic\u2019s security and audit logging capabilities | RELEVANCE: competitive intelligence | CONFIDENCE: 0.72",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "5d3e59a253abb511"
+    },
+    {
+      "text": "The presence of \"event\" entities connected to Elastic Stack implies usage in large-scale public gatherings or emergency response scenarios; sales should highlight real-time log aggregation and anomaly detection for crisis management use cases | RELEVANCE: market trend | CONFIDENCE: 0.65",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "8c697bd2e9cc6759"
+    },
+    {
+      "text": "With \"person\" entities strongly linked to Elastic and Python, there is a network of technical champions within SLED agencies; sales should identify these key influencers via LinkedIn/GitHub activity to drive bottom-up adoption rather than top-down procurement | RELEVANCE: account opportunity | CONFIDENCE: 0.76",
+      "domain": "general",
+      "confidence": 0.5,
+      "novel": true,
+      "hash": "6e486d337e11f34f"
+    }
+  ]
+}
