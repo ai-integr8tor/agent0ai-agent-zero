@@ -91,6 +91,9 @@ class AgentContext:
         AgentContext._counter += 1
         self.no = AgentContext._counter
         self.last_message = last_message or datetime.now(timezone.utc)
+        
+        # Initialize error tracking counters
+        self.tool_request_format_error_count = 0  # Track format errors for warnings
 
         # initialize agent at last (context is complete now)
         self.agent0 = agent0 or Agent(0, self.config, self)
@@ -727,6 +730,129 @@ class Agent:
         extension.call_extensions_sync("hist_add_tool_result", self, data=data)
         return self.hist_add_message(False, content=data, id=msg_id)
 
+    def build_tool_request_error_observation(
+        self, error_reason: str, invalid_request: dict | None = None
+    ) -> str:
+        """Build structured error observation for invalid tool request format.
+        
+        Args:
+            error_reason: Human-readable error description
+            invalid_request: The invalid request that caused the error
+            
+        Returns:
+            Formatted error observation message for LLM feedback
+        """
+        obs = "**Invalid tool request format**\n\n"
+        obs += f"**Reason:** {error_reason}\n\n"
+        
+        if invalid_request:
+            obs += "**Your invalid tool request:**\n"
+            obs += "```json\n"
+            import json
+            try:
+                obs += json.dumps(invalid_request, indent=2)
+            except:
+                obs += str(invalid_request)
+            obs += "\n```\n\n"
+        
+        obs += "**Correct required shape:**\n"
+        obs += "```json\n"
+        obs += "{\n"
+        obs += '  "tool_name": "name_of_the_tool",\n'
+        obs += '  "tool_args": {}\n'
+        obs += "}\n"
+        obs += "```\n\n"
+        
+        obs += "**Rules:**\n"
+        obs += "- `tool_name` must be a non-empty string\n"
+        obs += "- `tool_args` must be a JSON object\n"
+        obs += "- Use `tool_args` for arguments (not `args` or `arguments`)\n\n"
+        obs += "**Please retry** with a corrected tool call."
+        
+        return obs
+
+    @extension.extensible
+    def add_tool_request_error_observation(
+        self, error_reason: str, invalid_request: dict | None = None, id: str = ""
+    ):
+        """Add tool request error observation to history for LLM retry.
+        
+        Args:
+            error_reason: Error message to display
+            invalid_request: The invalid request object
+            id: Optional message ID for tracking
+        """
+        error_obs = self.build_tool_request_error_observation(error_reason, invalid_request)
+        return self.hist_add_warning(error_obs, id=id)
+
+    def build_tool_execution_error_observation(
+        self,
+        tool_name: str,
+        tool_args: dict | None = None,
+        error_type: str = "Unknown",
+        error_message: str = "",
+        hint: str = "",
+    ) -> str:
+        """Build structured error observation for tool execution failure.
+        
+        Args:
+            tool_name: Name of the tool that failed
+            tool_args: Arguments passed to the tool
+            error_type: Type of error (e.g., FileNotFoundError)
+            error_message: Brief error description
+            hint: Suggestion for retry
+            
+        Returns:
+            Formatted error observation for LLM feedback
+        """
+        obs = "**Tool execution failed**\n\n"
+        obs += f"**Tool:** `{tool_name}`\n\n"
+        
+        if tool_args:
+            obs += "**Arguments used:**\n"
+            obs += "```json\n"
+            import json
+            try:
+                obs += json.dumps(tool_args, indent=2)
+            except:
+                obs += str(tool_args)
+            obs += "\n```\n\n"
+        
+        obs += f"**Error type:** {error_type}\n\n"
+        obs += f"**Error message:** {error_message}\n\n"
+        
+        if hint:
+            obs += f"**Hint:** {hint}\n\n"
+        
+        obs += "**Please retry** with corrected tool arguments."
+        
+        return obs
+
+    @extension.extensible
+    def add_tool_execution_error_observation(
+        self,
+        tool_name: str,
+        tool_args: dict | None = None,
+        error_type: str = "Unknown",
+        error_message: str = "",
+        hint: str = "",
+        id: str = "",
+    ):
+        """Add tool execution error observation to history for LLM retry.
+        
+        Args:
+            tool_name: Name of the failed tool
+            tool_args: Arguments passed to the tool
+            error_type: Type of error
+            error_message: Brief error description
+            hint: Suggestion for retry
+            id: Optional message ID for tracking
+        """
+        error_obs = self.build_tool_execution_error_observation(
+            tool_name, tool_args, error_type, error_message, hint
+        )
+        return self.hist_add_warning(error_obs, id=id)
+
     def concat_messages(
         self, messages
     ):  # TODO add param for message range, topic, history
@@ -870,16 +996,48 @@ class Agent:
 
         raw_tool_name = ""
         tool_args = {}
+        normalization_repairs = []
 
         # Only validate when extraction produced an object; None means no JSON tool
         # block was found - the misformat warning path below handles that.
         if tool_request is not None:
             try:
-                raw_tool_name, tool_args = extract_tools.normalize_tool_request(
+                result = extract_tools.normalize_tool_request_with_diagnostics(
                     tool_request
                 )
-            except ValueError:
-                tool_request = None  # treat structural validation errors as misformat
+                raw_tool_name = result.tool_name
+                tool_args = result.tool_args
+                normalization_repairs = result.repairs
+                
+                # Log auto-repairs for transparency
+                if normalization_repairs:
+                    repair_msg = "Tool request auto-repaired:\n" + "\n".join(
+                        f"- {r}" for r in normalization_repairs
+                    )
+                    PrintStyle(font_color="yellow", padding=True).print(repair_msg)
+                    
+            except ValueError as e:
+                # Track format error count
+                if not hasattr(self.context, "tool_request_format_error_count"):
+                    self.context.tool_request_format_error_count = 0
+                self.context.tool_request_format_error_count += 1
+                
+                error_reason = str(e)
+                self.add_tool_request_error_observation(error_reason, tool_request)
+                
+                # Warn if errors are repeating
+                if self.context.tool_request_format_error_count >= 3:
+                    repeat_warning = (
+                        "**Format Error Repeated**\n\n"
+                        "You have produced invalid tool requests **3+ times**.\n\n"
+                        "Do not call the same invalid format again.\n\n"
+                        "**Either:**\n"
+                        "1. Retry with the exact required JSON shape, or\n"
+                        "2. Use the `response` tool to end this interaction."
+                    )
+                    self.hist_add_warning(repeat_warning)
+                
+                tool_request = None  # treat as misformat
 
         if tool_request is not None:
             tool_name = raw_tool_name  # Initialize tool_name with raw_tool_name
@@ -932,7 +1090,39 @@ class Agent:
                         tool_name=tool_name,
                     )
 
-                    response = await tool.execute(**tool_args)
+                    # Execute tool with error handling
+                    try:
+                        response = await tool.execute(**tool_args)
+                    except Exception as exec_error:
+                        # Capture execution error details
+                        error_type = type(exec_error).__name__
+                        error_msg = str(exec_error)[:200]  # Truncate to prevent noise
+                        
+                        # Generate helpful hint based on error type
+                        hint = ""
+                        if error_type == "FileNotFoundError":
+                            hint = "The file or path may not exist. Check for typos or list the directory first."
+                        elif error_type == "ValueError":
+                            hint = "One or more arguments have invalid values. Check the argument types and values."
+                        elif error_type == "TypeError":
+                            hint = "Missing required arguments or wrong argument types."
+                        elif error_type == "PermissionError":
+                            hint = "Insufficient permissions to perform this operation."
+                        
+                        # Add error observation for LLM retry
+                        self.add_tool_execution_error_observation(
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                            error_type=error_type,
+                            error_message=error_msg,
+                            hint=hint,
+                        )
+                        
+                        PrintStyle(font_color="red", padding=True).print(
+                            f"Tool '{tool_name}' execution failed: {error_type}: {error_msg}"
+                        )
+                        return None  # Don't break loop, let LLM retry
+                    
                     await self.handle_intervention()
 
                     # Allow extensions to postprocess tool response

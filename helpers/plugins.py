@@ -12,6 +12,7 @@ from typing import (
     Literal,
     Optional,
     TYPE_CHECKING,
+    TypeAlias,
     TypedDict,
 )
 
@@ -44,7 +45,7 @@ _META_TARGET_RE = re.compile(
 )
 
 
-type ToggleState = Literal["enabled", "disabled", "advanced"]
+ToggleState: TypeAlias = Literal["enabled", "disabled", "advanced"]
 
 
 class PluginAssetFile(TypedDict):
