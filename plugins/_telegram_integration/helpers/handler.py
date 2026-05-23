@@ -412,8 +412,19 @@ def _pop_topic_contexts(bot_name: str, chat_id: int, message_thread_id: int) -> 
 
 
 def _get_context_project_name(context: AgentContext | None, ctx_id: str) -> str | None:
-    if context and hasattr(context, "project") and context.project:
-        return context.project.name
+    """Return the Agent Zero project assigned to a chat context.
+
+    Telegram topic archival must use the same project key as chat_project_filter.
+    Agent Zero stores project assignment in context.data["project"] via
+    helpers.projects.activate_project(...), not in /projects/<name>/chats/<ctx_id>.
+    """
+    if context:
+        with suppress(Exception):
+            project_name = context.get_data("project")
+            if project_name:
+                return str(project_name)
+        if hasattr(context, "project") and context.project:
+            return context.project.name
 
     projects_base = "/a0/usr/projects"
     if os.path.exists(projects_base):
