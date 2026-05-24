@@ -67,7 +67,7 @@ def create_bot(
     if on_command_control:
         router.message.register(
             on_command_control,
-            Command(commands=["config", "preset", "queue", "send", "now", "later", "nudge", "pause", "restart"]),
+            Command(commands=["config", "preset", "queue", "send", "now", "later", "nudge", "pause", "restart", "topicname"]),
         )
     if on_command_affect_project:
         router.message.register(
@@ -131,6 +131,7 @@ async def set_bot_commands(instance: BotInstance):
         BotCommand(command="nudge", description="Relancer l’agent actif"),
         BotCommand(command="pause", description="Mettre l’agent actif en pause"),
         BotCommand(command="restart", description="Redémarrer Agent Zero"),
+        BotCommand(command="topicname", description="Tester le renommage du sujet"),
         BotCommand(command="send", description="Envoyer la queue"),
     ]
     await instance.bot.set_my_commands(commands)

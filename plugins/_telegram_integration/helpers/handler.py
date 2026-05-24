@@ -564,6 +564,67 @@ async def handle_restart(message: TgMessage, bot_name: str, bot_cfg: dict):
     threading.Timer(1.0, _reload_later).start()
 
 
+async def handle_topicname(message: TgMessage, bot_name: str, bot_cfg: dict):
+    """Diagnostic command: rename the current Telegram forum topic directly."""
+    user = message.from_user
+    PrintStyle.info(f"Telegram handle_topicname bot={bot_name} chat={message.chat.id} user={getattr(user, 'id', None)}")
+    if not user:
+        return
+    if not _is_allowed(bot_cfg, user.id, user.username):
+        return
+
+    instance = get_bot(bot_name)
+    if not instance:
+        return
+
+    text = message.text or message.caption or ""
+    _, requested_name = _parse_slash_command(text)
+    requested_name = (requested_name or "").strip()
+    message_thread_id = getattr(message, "message_thread_id", None)
+
+    if not requested_name:
+        await _send_with_temp_bot(
+            instance.bot.token, message.chat.id,
+            "Usage : /topicname <nouveau nom du sujet>",
+            parse_mode=None,
+            message_thread_id=message_thread_id,
+        )
+        return
+    if message_thread_id is None:
+        await _send_with_temp_bot(
+            instance.bot.token, message.chat.id,
+            "Impossible : Telegram ne fournit pas l’ID du sujet courant pour cette commande.",
+            parse_mode=None,
+            message_thread_id=message_thread_id,
+        )
+        return
+
+    name = requested_name[:128].strip()
+    try:
+        async with _temp_bot(instance.bot.token) as topic_bot:
+            await topic_bot.edit_forum_topic(
+                chat_id=message.chat.id,
+                message_thread_id=message_thread_id,
+                name=name,
+            )
+        await _send_with_temp_bot(
+            instance.bot.token, message.chat.id,
+            f"Sujet renommé : {name}",
+            parse_mode=None,
+            message_thread_id=message_thread_id,
+        )
+        PrintStyle.info(f"Telegram ({bot_name}): /topicname renamed thread={message_thread_id} to {name!r}")
+    except Exception as e:
+        error = format_error(e)
+        PrintStyle.error(f"Telegram ({bot_name}): /topicname failed thread={message_thread_id} name={name!r}: {error}")
+        await _send_with_temp_bot(
+            instance.bot.token, message.chat.id,
+            f"Erreur renommage sujet : {error}",
+            parse_mode=None,
+            message_thread_id=message_thread_id,
+        )
+
+
 async def handle_pause(message: TgMessage, bot_name: str, bot_cfg: dict):
     """Pause the active Agent Zero run for this Telegram chat/topic."""
     user = message.from_user
@@ -682,6 +743,9 @@ async def handle_message(message: TgMessage, bot_name: str, bot_cfg: dict):
     command, command_args = _parse_slash_command(text)
     if command == "/restart":
         await handle_restart(message, bot_name, bot_cfg)
+        return
+    if command == "/topicname":
+        await handle_topicname(message, bot_name, bot_cfg)
         return
     if command == "/pause":
         await handle_pause(message, bot_name, bot_cfg)

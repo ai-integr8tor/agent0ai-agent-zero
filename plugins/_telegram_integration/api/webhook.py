@@ -77,6 +77,7 @@ async def _direct_process_update(bot_name: str, bot_cfg: dict, update_data: dict
         handle_nudge,
         handle_pause,
         handle_restart,
+        handle_topicname,
         handle_affect_project,
         handle_callback_query,
         handle_new_members,
@@ -124,6 +125,8 @@ async def _direct_process_update(bot_name: str, bot_cfg: dict, update_data: dict
         await handle_pause(msg, bot_name, bot_cfg)
     elif command == "/restart":
         await handle_restart(msg, bot_name, bot_cfg)
+    elif command == "/topicname":
+        await handle_topicname(msg, bot_name, bot_cfg)
     else:
         await handle_message(msg, bot_name, bot_cfg)
     return True
