@@ -837,16 +837,31 @@ def _project_label(item: dict) -> str:
     return title or name
 
 
-def _project_picker_keyboard(items: list[dict], current: str | None, message_thread_id: int | None) -> list[list[dict]]:
-    thread_part = str(message_thread_id) if message_thread_id is not None else "main"
+def _project_picker_keyboard(items: list[dict], current: str | None, message_thread_id: int | None, context_id: str | None = None) -> list[list[dict]]:
+    """Build the project picker.
+
+    Prefer encoding the AgentContext id in callback data. Telegram sometimes
+    omits message_thread_id on inline callbacks, while the context always stores
+    the originating topic id. The legacy thread-based callback remains supported
+    by _handle_project_callback for already displayed keyboards.
+    """
     current = str(current or "").strip()
+    if context_id:
+        callback_prefix = f"tg_project_ctx:{context_id}"
+    else:
+        thread_part = str(message_thread_id) if message_thread_id is not None else "main"
+        callback_prefix = f"tg_project:{thread_part}"
     buttons = []
-    for item in items[:48]:
+    for index, item in enumerate(items[:48]):
         name = item.get("name") or ""
         label = _project_label(item)
         prefix = "✅ " if name == current else ""
-        buttons.append({"text": (prefix + label)[:64], "callback_data": f"tg_project:{thread_part}:{name}"})
-    buttons.append({"text": "❌ Aucun projet", "callback_data": f"tg_project:{thread_part}:none"})
+        if context_id:
+            callback_data = f"{callback_prefix}:i:{index}"
+        else:
+            callback_data = f"{callback_prefix}:{name}"
+        buttons.append({"text": (prefix + label)[:64], "callback_data": callback_data[:64]})
+    buttons.append({"text": "❌ Aucun projet", "callback_data": f"{callback_prefix}:none"[:64]})
     return _chunk_rows(buttons, 1)
 
 
@@ -875,7 +890,7 @@ async def handle_affect_project(message: TgMessage, bot_name: str, bot_cfg: dict
         return
 
     message_thread_id = getattr(message, "message_thread_id", None)
-    keyboard = _project_picker_keyboard(items, current, message_thread_id)
+    keyboard = _project_picker_keyboard(items, current, message_thread_id, context.id if context else None)
 
     current_label = current or "aucun"
     await _send_with_temp_bot(
@@ -935,7 +950,7 @@ async def _rename_forum_topic_for_project(instance, chat_id: int, message_thread
         return None
 
 
-async def _refresh_project_picker_message(query: CallbackQuery, instance, items: list[dict], current: str | None, message_thread_id: int | None) -> None:
+async def _refresh_project_picker_message(query: CallbackQuery, instance, items: list[dict], current: str | None, message_thread_id: int | None, context_id: str | None = None) -> None:
     """Edit the inline project picker so the green tick moves immediately."""
     if not instance or not query.message:
         return
@@ -943,7 +958,7 @@ async def _refresh_project_picker_message(query: CallbackQuery, instance, items:
     if not token:
         return
     try:
-        keyboard = tc.build_inline_keyboard(_project_picker_keyboard(items, current, message_thread_id))
+        keyboard = tc.build_inline_keyboard(_project_picker_keyboard(items, current, message_thread_id, context_id))
         current_label = current or "aucun"
         async with _temp_bot(token) as picker_bot:
             await picker_bot.edit_message_text(
@@ -959,7 +974,7 @@ async def _refresh_project_picker_message(query: CallbackQuery, instance, items:
 
 async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg: dict) -> bool:
     data = query.data or ""
-    if not data.startswith("tg_project:"):
+    if not (data.startswith("tg_project:") or data.startswith("tg_project_ctx:")):
         return False
 
     user = query.from_user
@@ -969,26 +984,51 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
         await query.answer("Non autorisé.")
         return True
 
-    raw_payload = data.split(":", 1)[1]
-    payload_parts = raw_payload.split(":", 1)
-    if len(payload_parts) == 2 and (payload_parts[0] == "main" or payload_parts[0].isdigit()):
-        thread_part, selected = payload_parts
-        callback_thread_id = getattr(query.message, "message_thread_id", None)
-        # Older project pickers used "main" when Telegram did not expose the
-        # thread at send time. On callback, Telegram can still include the real
-        # message_thread_id; prefer it so old buttons can rename the topic too.
-        if thread_part == "main":
-            message_thread_id = callback_thread_id
-        else:
-            message_thread_id = int(thread_part)
-    else:
-        selected = raw_payload
-        message_thread_id = getattr(query.message, "message_thread_id", None)
+    context = None
+    message_thread_id = getattr(query.message, "message_thread_id", None)
+    context_id = None
 
-    context = await _get_or_create_context_from_user(
-        bot_name, bot_cfg, user.id, user.username, query.message.chat.id,
-        message_thread_id,
-    )
+    if data.startswith("tg_project_ctx:"):
+        raw_payload = data.split(":", 1)[1]
+        payload_parts = raw_payload.split(":", 1)
+        if len(payload_parts) != 2:
+            await query.answer("Callback projet invalide.")
+            return True
+        context_id, selected = payload_parts
+        context = AgentContext.get(context_id)
+        if context:
+            stored_thread_id = context.data.get(CTX_TG_MESSAGE_THREAD_ID)
+            if stored_thread_id is not None:
+                with suppress(Exception):
+                    message_thread_id = int(stored_thread_id)
+        if selected.startswith("i:"):
+            with suppress(Exception):
+                project_index = int(selected.split(":", 1)[1])
+                indexed_items = _active_project_items()
+                if 0 <= project_index < len(indexed_items[:48]):
+                    selected = indexed_items[project_index].get("name") or ""
+    else:
+        raw_payload = data.split(":", 1)[1]
+        payload_parts = raw_payload.split(":", 1)
+        if len(payload_parts) == 2 and (payload_parts[0] == "main" or payload_parts[0].isdigit()):
+            thread_part, selected = payload_parts
+            callback_thread_id = getattr(query.message, "message_thread_id", None)
+            # Older project pickers used "main" when Telegram did not expose the
+            # thread at send time. On callback, Telegram can still include the real
+            # message_thread_id; prefer it so old buttons can rename the topic too.
+            if thread_part == "main":
+                message_thread_id = callback_thread_id
+            else:
+                message_thread_id = int(thread_part)
+        else:
+            selected = raw_payload
+            message_thread_id = getattr(query.message, "message_thread_id", None)
+
+    if context is None:
+        context = await _get_or_create_context_from_user(
+            bot_name, bot_cfg, user.id, user.username, query.message.chat.id,
+            message_thread_id,
+        )
     if not context:
         await query.answer("Contexte introuvable.")
         return True
@@ -1011,7 +1051,7 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
         await query.answer("Projet retiré.")
         if instance:
             items = _active_project_items()
-            await _refresh_project_picker_message(query, instance, items, "", message_thread_id)
+            await _refresh_project_picker_message(query, instance, items, "", message_thread_id, context.id)
             base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
             _remember_topic_base_name(context, base_name)
             renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, None, base_name)
@@ -1035,7 +1075,7 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
     label = _project_label(match)
     await query.answer(f"Associé à {label}")
     if instance:
-        await _refresh_project_picker_message(query, instance, items, selected, message_thread_id)
+        await _refresh_project_picker_message(query, instance, items, selected, message_thread_id, context.id)
         base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
         _remember_topic_base_name(context, base_name)
         renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, label, base_name)
