@@ -1,3 +1,6 @@
+import base64
+import subprocess
+import tempfile
 import json
 import os
 import re
@@ -834,6 +837,19 @@ def _project_label(item: dict) -> str:
     return title or name
 
 
+def _project_picker_keyboard(items: list[dict], current: str | None, message_thread_id: int | None) -> list[list[dict]]:
+    thread_part = str(message_thread_id) if message_thread_id is not None else "main"
+    current = str(current or "").strip()
+    buttons = []
+    for item in items[:48]:
+        name = item.get("name") or ""
+        label = _project_label(item)
+        prefix = "✅ " if name == current else ""
+        buttons.append({"text": (prefix + label)[:64], "callback_data": f"tg_project:{thread_part}:{name}"})
+    buttons.append({"text": "❌ Aucun projet", "callback_data": f"tg_project:{thread_part}:none"})
+    return _chunk_rows(buttons, 1)
+
+
 async def handle_affect_project(message: TgMessage, bot_name: str, bot_cfg: dict):
     """Show an inline project picker to assign the current Telegram chat/topic."""
     user = message.from_user
@@ -859,15 +875,7 @@ async def handle_affect_project(message: TgMessage, bot_name: str, bot_cfg: dict
         return
 
     message_thread_id = getattr(message, "message_thread_id", None)
-    thread_part = str(message_thread_id) if message_thread_id is not None else "main"
-    buttons = []
-    for item in items[:48]:
-        name = item.get("name") or ""
-        label = _project_label(item)
-        prefix = "✅ " if name == current else ""
-        buttons.append({"text": (prefix + label)[:64], "callback_data": f"tg_project:{thread_part}:{name}"})
-    buttons.append({"text": "❌ Aucun projet", "callback_data": f"tg_project:{thread_part}:none"})
-    keyboard = _chunk_rows(buttons, 1)
+    keyboard = _project_picker_keyboard(items, current, message_thread_id)
 
     current_label = current or "aucun"
     await _send_with_temp_bot(
@@ -885,13 +893,15 @@ def _strip_project_prefix_from_topic(name: str) -> str:
     return re.sub(r"^.+?\s+[—-]\s+", "", name, count=1).strip() or name
 
 
-def _telegram_topic_project_name(label: str, base_name: str | None = None) -> str:
-    label = str(label or "").strip() or "Agent Zero"
+def _telegram_topic_project_name(label: str | None, base_name: str | None = None) -> str:
+    label = str(label or "").strip()
     base_name = _strip_project_prefix_from_topic(base_name or "")
-    if base_name and base_name.lower() != label.lower():
+    if not label:
+        name = base_name or "Agent Zero"
+    elif base_name and base_name.lower() != label.lower():
         name = f"{label} — {base_name}"
     else:
-        name = label
+        name = label or base_name or "Agent Zero"
     # Telegram forum topic names are limited to 128 chars; keep the project visible first.
     return name[:128].strip()
 
@@ -904,13 +914,13 @@ def _remember_topic_base_name(context: AgentContext | None, base_name: str | Non
         context.data["tg_topic_base_name"] = base_name[:128]
 
 
-async def _rename_forum_topic_for_project(instance, chat_id: int, message_thread_id: int | None, label: str | None, base_name: str | None = None) -> None:
+async def _rename_forum_topic_for_project(instance, chat_id: int, message_thread_id: int | None, label: str | None, base_name: str | None = None) -> str | None:
     if not instance or message_thread_id is None:
-        return
-    name = _telegram_topic_project_name(label or "Agent Zero", base_name)
+        return None
+    name = _telegram_topic_project_name(label, base_name)
     token = getattr(getattr(instance, "bot", None), "token", None)
     if not token:
-        return
+        return None
     try:
         async with _temp_bot(token) as topic_bot:
             await topic_bot.edit_forum_topic(
@@ -919,8 +929,32 @@ async def _rename_forum_topic_for_project(instance, chat_id: int, message_thread
                 name=name,
             )
         PrintStyle.info(f"Telegram: renamed forum topic thread={message_thread_id} to {name!r}")
+        return name
     except Exception as e:
-        PrintStyle.error(f"Telegram: failed to rename forum topic thread={message_thread_id}: {format_error(e)}")
+        PrintStyle.error(f"Telegram: failed to rename forum topic thread={message_thread_id} to {name!r}: {format_error(e)}")
+        return None
+
+
+async def _refresh_project_picker_message(query: CallbackQuery, instance, items: list[dict], current: str | None, message_thread_id: int | None) -> None:
+    """Edit the inline project picker so the green tick moves immediately."""
+    if not instance or not query.message:
+        return
+    token = getattr(getattr(instance, "bot", None), "token", None)
+    if not token:
+        return
+    try:
+        keyboard = tc.build_inline_keyboard(_project_picker_keyboard(items, current, message_thread_id))
+        current_label = current or "aucun"
+        async with _temp_bot(token) as picker_bot:
+            await picker_bot.edit_message_text(
+                chat_id=query.message.chat.id,
+                message_id=query.message.message_id,
+                text=f"Projet actuel : {current_label}\nChoisis le projet à associer à ce chat :",
+                reply_markup=keyboard,
+                parse_mode=None,
+            )
+    except Exception as e:
+        PrintStyle.error(f"Telegram: failed to refresh project picker: {format_error(e)}")
 
 
 async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg: dict) -> bool:
@@ -939,7 +973,14 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
     payload_parts = raw_payload.split(":", 1)
     if len(payload_parts) == 2 and (payload_parts[0] == "main" or payload_parts[0].isdigit()):
         thread_part, selected = payload_parts
-        message_thread_id = None if thread_part == "main" else int(thread_part)
+        callback_thread_id = getattr(query.message, "message_thread_id", None)
+        # Older project pickers used "main" when Telegram did not expose the
+        # thread at send time. On callback, Telegram can still include the real
+        # message_thread_id; prefer it so old buttons can rename the topic too.
+        if thread_part == "main":
+            message_thread_id = callback_thread_id
+        else:
+            message_thread_id = int(thread_part)
     else:
         selected = raw_payload
         message_thread_id = getattr(query.message, "message_thread_id", None)
@@ -952,6 +993,14 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
         await query.answer("Contexte introuvable.")
         return True
 
+    # Telegram callback messages can omit message_thread_id. Fall back to the
+    # context value so topic renaming is not skipped after selecting a project.
+    if message_thread_id is None:
+        stored_thread_id = context.data.get(CTX_TG_MESSAGE_THREAD_ID)
+        if stored_thread_id is not None:
+            with suppress(Exception):
+                message_thread_id = int(stored_thread_id)
+
     instance = get_bot(bot_name)
     if selected == "none":
         projects.deactivate_project(context.id)
@@ -961,9 +1010,15 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
             mark_dirty_for_context(context.id, reason="telegram.project_assign_clear")
         await query.answer("Projet retiré.")
         if instance:
+            items = _active_project_items()
+            await _refresh_project_picker_message(query, instance, items, "", message_thread_id)
             base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
-            await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, "Agent Zero", base_name)
-            await _send_with_temp_bot(instance.bot.token, query.message.chat.id, "Projet retiré de ce chat.", parse_mode=None, message_thread_id=message_thread_id)
+            _remember_topic_base_name(context, base_name)
+            renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, None, base_name)
+            if renamed_to:
+                context.data["tg_topic_name"] = renamed_to
+                save_tmp_chat(context)
+            await _send_with_temp_bot(instance.bot.token, query.message.chat.id, "Projet retiré de ce chat. Le préfixe du sujet a été retiré.", parse_mode=None, message_thread_id=message_thread_id)
         return True
 
     items = _active_project_items()
@@ -980,11 +1035,15 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
     label = _project_label(match)
     await query.answer(f"Associé à {label}")
     if instance:
+        await _refresh_project_picker_message(query, instance, items, selected, message_thread_id)
         base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
         _remember_topic_base_name(context, base_name)
+        renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, label, base_name)
+        if renamed_to:
+            context.data["tg_topic_name"] = renamed_to
         save_tmp_chat(context)
-        await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, label, base_name)
-        await _send_with_temp_bot(instance.bot.token, query.message.chat.id, f"Chat associé au projet : {label}", parse_mode=None, message_thread_id=message_thread_id)
+        suffix = f"\nSujet renommé : {renamed_to}" if renamed_to else ""
+        await _send_with_temp_bot(instance.bot.token, query.message.chat.id, f"Chat associé au projet : {label}{suffix}", parse_mode=None, message_thread_id=message_thread_id)
     return True
 
 
@@ -1307,6 +1366,7 @@ async def send_telegram_reply(
     response_text: str,
     attachments: list[str] | None = None,
     keyboard: list[list[dict]] | None = None,
+    voice: bool = False,
 ) -> str | None:
     """Send reply to Telegram user. Returns error string or None on success."""
     bot_name = context.data.get(CTX_TG_BOT)
@@ -1336,6 +1396,12 @@ async def send_telegram_reply(
 
             if response_text:
                 response_text = _sanitize_telegram_outbound_text(response_text)
+                if voice:
+                    voice_path = await _generate_telegram_voice(response_text)
+                    if voice_path:
+                        await tc.send_voice(reply_bot, chat_id, voice_path, reply_to_message_id=reply_to, message_thread_id=message_thread_id)
+                    else:
+                        PrintStyle.error("Telegram voice requested but TTS generation returned no file; falling back to text")
                 html_text = tc.md_to_telegram_html(response_text)
                 if keyboard:
                     await tc.send_text_with_keyboard(reply_bot, chat_id, html_text, keyboard, reply_to_message_id=reply_to, message_thread_id=message_thread_id)
@@ -1348,6 +1414,37 @@ async def send_telegram_reply(
         error = format_error(e)
         PrintStyle.error(f"Telegram reply failed: {error}")
         return error
+
+
+async def _generate_telegram_voice(text: str) -> str | None:
+    """Generate an OGG/Opus voice note for Telegram using Agent Zero Kokoro TTS."""
+    clean = _sanitize_telegram_outbound_text(text or "").strip()
+    if not clean:
+        return None
+    # Keep voice notes concise and avoid speaking huge technical outputs.
+    clean = re.sub(r"```.*?```", "", clean, flags=re.S).strip()
+    clean = re.sub(r"[`*_~#]", "", clean)
+    clean = clean[:1800]
+    try:
+        from helpers.kokoro_tts import synthesize_sentences
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", clean) if part.strip()] or [clean]
+        audio_b64 = await synthesize_sentences(sentences[:12])
+        if not audio_b64:
+            return None
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+            wav_file.write(base64.b64decode(audio_b64))
+            wav_path = wav_file.name
+        ogg_path = wav_path.rsplit(".", 1)[0] + ".ogg"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", wav_path, "-c:a", "libopus", "-b:a", "32k", "-application", "voip", ogg_path],
+            check=True,
+        )
+        with suppress(Exception):
+            os.unlink(wav_path)
+        return ogg_path
+    except Exception as e:
+        PrintStyle.error(f"Telegram TTS generation failed: {format_error(e)}")
+        return None
 
 # Helpers
 
