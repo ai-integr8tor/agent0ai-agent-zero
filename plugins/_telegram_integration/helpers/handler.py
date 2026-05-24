@@ -943,6 +943,10 @@ async def handle_affect_project(message: TgMessage, bot_name: str, bot_cfg: dict
 
     context = await _get_or_create_context(bot_name, bot_cfg, message)
     current = context.get_data("project") if context else ""
+    message_thread_id = getattr(message, "message_thread_id", None)
+    if context and message_thread_id is not None:
+        context.data[CTX_TG_MESSAGE_THREAD_ID] = message_thread_id
+        save_tmp_chat(context)
     items = _active_project_items()
     if not items:
         await _send_with_temp_bot(
@@ -953,7 +957,6 @@ async def handle_affect_project(message: TgMessage, bot_name: str, bot_cfg: dict
         )
         return
 
-    message_thread_id = getattr(message, "message_thread_id", None)
     keyboard = _project_picker_keyboard(items, current, message_thread_id, context.id if context else None)
 
     current_label = current or "aucun"
@@ -994,11 +997,16 @@ def _remember_topic_base_name(context: AgentContext | None, base_name: str | Non
 
 
 async def _rename_forum_topic_for_project(instance, chat_id: int, message_thread_id: int | None, label: str | None, base_name: str | None = None) -> str | None:
-    if not instance or message_thread_id is None:
+    if not instance:
+        PrintStyle.error("Telegram: skipped forum topic rename because bot instance is unavailable")
+        return None
+    if message_thread_id is None:
+        PrintStyle.error("Telegram: skipped forum topic rename because message_thread_id is missing")
         return None
     name = _telegram_topic_project_name(label, base_name)
     token = getattr(getattr(instance, "bot", None), "token", None)
     if not token:
+        PrintStyle.error("Telegram: skipped forum topic rename because bot token is unavailable")
         return None
     try:
         async with _temp_bot(token) as topic_bot:
@@ -1271,7 +1279,9 @@ async def _get_or_create_context_from_user(
         if ctx_id:
             ctx = AgentContext.get(ctx_id)
             if ctx:
-                ctx.data[CTX_TG_MESSAGE_THREAD_ID] = message_thread_id
+                if message_thread_id is not None:
+                    ctx.data[CTX_TG_MESSAGE_THREAD_ID] = message_thread_id
+                    save_tmp_chat(ctx)
                 return ctx
             # Context was garbage collected, remove stale mapping
             chats.pop(key, None)
