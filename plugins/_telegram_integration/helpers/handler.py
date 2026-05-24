@@ -1114,13 +1114,18 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
                 message_thread_id = int(stored_thread_id)
 
     instance = get_bot(bot_name)
+    PrintStyle.info(
+        f"Telegram ({bot_name}): project callback selected={selected!r} context={getattr(context, 'id', None)} "
+        f"thread={message_thread_id!r} chat={getattr(query.message.chat, 'id', None)} instance={bool(instance)}"
+    )
     if selected == "none":
         projects.deactivate_project(context.id)
         save_tmp_chat(context)
         with suppress(Exception):
             from helpers.state_monitor_integration import mark_dirty_for_context
             mark_dirty_for_context(context.id, reason="telegram.project_assign_clear")
-        await query.answer("Projet retiré.")
+        with suppress(Exception):
+            await query.answer("Projet retiré.")
         if instance:
             items = _active_project_items()
             await _refresh_project_picker_message(query, instance, items, "", message_thread_id, context.id)
@@ -1145,17 +1150,20 @@ async def _handle_project_callback(query: CallbackQuery, bot_name: str, bot_cfg:
         from helpers.state_monitor_integration import mark_dirty_for_context
         mark_dirty_for_context(context.id, reason="telegram.project_assign_set")
     label = _project_label(match)
-    await query.answer(f"Associé à {label}")
-    if instance:
-        await _refresh_project_picker_message(query, instance, items, selected, message_thread_id, context.id)
-        base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
-        _remember_topic_base_name(context, base_name)
-        renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, label, base_name)
-        if renamed_to:
-            context.data["tg_topic_name"] = renamed_to
-        save_tmp_chat(context)
-        suffix = f"\nSujet renommé : {renamed_to}" if renamed_to else ""
-        await _send_with_temp_bot(instance.bot.token, query.message.chat.id, f"Chat associé au projet : {label}{suffix}", parse_mode=None, message_thread_id=message_thread_id)
+    with suppress(Exception):
+        await query.answer(f"Associé à {label}")
+    if not instance:
+        PrintStyle.error(f"Telegram ({bot_name}): project callback cannot rename topic because bot instance is unavailable")
+        return True
+    await _refresh_project_picker_message(query, instance, items, selected, message_thread_id, context.id)
+    base_name = context.data.get("tg_topic_base_name") or getattr(context, "name", "")
+    _remember_topic_base_name(context, base_name)
+    renamed_to = await _rename_forum_topic_for_project(instance, query.message.chat.id, message_thread_id, label, base_name)
+    if renamed_to:
+        context.data["tg_topic_name"] = renamed_to
+    save_tmp_chat(context)
+    suffix = f"\nSujet renommé : {renamed_to}" if renamed_to else ""
+    await _send_with_temp_bot(instance.bot.token, query.message.chat.id, f"Chat associé au projet : {label}{suffix}", parse_mode=None, message_thread_id=message_thread_id)
     return True
 
 
