@@ -26,7 +26,7 @@ from werkzeug.wrappers.request import Request as WerkzeugRequest
 import socketio  # type: ignore[import-untyped]
 
 from helpers import dotenv, fasta2a_server, files, git, login, mcp_server, runtime
-from helpers.api import register_api_route, requires_auth
+from helpers.api import get_safe_next_url, register_api_route, requires_auth
 from helpers.extension import extensible
 from helpers.files import get_abs_path
 from helpers.print_style import PrintStyle
@@ -200,19 +200,25 @@ class UiRouteHandlers:
     @extensible
     async def login_handler(self):
         error = None
+        fallback_url = url_for("serve_index")
+        next_url = get_safe_next_url(
+            request.form.get("next") if request.method == "POST" else request.args.get("next"),
+            fallback_url,
+        )
+
         if request.method == "POST":
             user = dotenv.get_dotenv_value("AUTH_LOGIN")
             password = dotenv.get_dotenv_value("AUTH_PASSWORD")
 
             if request.form["username"] == user and request.form["password"] == password:
                 session["authentication"] = login.get_credentials_hash()
-                return redirect(url_for("serve_index"))
+                return redirect(next_url or fallback_url)
             else:
                 await asyncio.sleep(1)
                 error = "Invalid Credentials. Please try again."
 
         login_page_content = files.read_file("webui/login.html")
-        return render_template_string(login_page_content, error=error)
+        return render_template_string(login_page_content, error=error, next=next_url)
 
     @extensible
     async def logout_handler(self):
