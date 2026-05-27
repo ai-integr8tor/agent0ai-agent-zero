@@ -24,7 +24,7 @@ class SetAgentProfile(ApiHandler):
         if not profile:
             return Response(status=400, response="Missing agent_profile")
 
-        context = AgentContext.get(context_id)
+        context = self.use_context(context_id, create_if_not_exists=False)
         if not context:
             return Response(status=404, response="Context not found")
         if context.is_running():

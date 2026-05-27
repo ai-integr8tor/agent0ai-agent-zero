@@ -34,6 +34,7 @@ class BasicProjectData(TypedDict):
     instructions: str
     color: str
     git_url: str
+    members: list[str]
     file_structure: FileStructureInjectionSettings
 
 class GitStatusData(TypedDict, total=False):
@@ -161,6 +162,7 @@ def _normalizeBasicData(data: BasicProjectData) -> BasicProjectData:
         "instructions": data.get("instructions", ""),
         "color": data.get("color", ""),
         "git_url": data.get("git_url", ""),
+        "members": [str(item).strip() for item in data.get("members", []) if str(item).strip()],
         "file_structure": data.get(
             "file_structure",
             _default_file_structure_settings(),
@@ -551,3 +553,27 @@ def get_file_structure(name: str, basic_data: BasicProjectData|None=None) -> str
         tree += "\n # Empty"
 
     return tree
+
+
+def get_project_members(name: str) -> list[str]:
+    data = load_basic_project_data(name)
+    members = data.get("members", [])
+    return [str(item).strip() for item in members if str(item).strip()]
+
+
+def is_user_project_member(name: str, user_id: str | None) -> bool:
+    if not name:
+        return True
+    try:
+        members = get_project_members(name)
+    except Exception:
+        return True
+    if not members:
+        return True
+    if not user_id:
+        return False
+    return user_id in members
+
+
+def filter_projects_for_user(projects_list, user_id: str | None):
+    return [p for p in (projects_list or []) if is_user_project_member(p.get("name", ""), user_id)]

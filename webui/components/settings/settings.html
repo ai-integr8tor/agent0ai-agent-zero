@@ -96,6 +96,9 @@
           <div class="settings-tab-panel" data-settings-tab="backup" x-show="$store.settings.activeTab === 'backup'">
             <x-component path="settings/backup/backup-settings.html"></x-component>
           </div>
+          <div class="settings-tab-panel" data-settings-tab="users" x-show="$store.settings.activeTab === 'users'">
+            <x-component path="settings/admin/admin-users.html"></x-component>
+          </div>
           <div class="settings-tab-panel" data-settings-tab="skills" x-show="$store.settings.activeTab === 'skills'">
             <x-component path="settings/skills/skills-settings.html"></x-component>
           </div>

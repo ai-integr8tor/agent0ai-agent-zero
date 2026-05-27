@@ -253,7 +253,12 @@ class StateMonitor:
                 dirty_reason = projection.dirty_reason
                 dirty_wave_id = projection.dirty_wave_id
 
-            snapshot = await build_snapshot_from_request(request=request)
+            # Extract user_id from connection identity using WsManager
+            from helpers.ws_manager import get_shared_ws_manager
+            ws_mgr = get_shared_ws_manager()
+            user_id = ws_mgr.get_user_for_sid(namespace, sid) if ws_mgr else "single_user"
+
+            snapshot = await build_snapshot_from_request(request=request, user_id=user_id)
 
             with self._lock:
                 projection = self._projections.get(identity)

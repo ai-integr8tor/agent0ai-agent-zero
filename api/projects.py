@@ -1,3 +1,5 @@
+from flask import session
+
 from helpers.api import ApiHandler, Input, Output, Request, Response
 from helpers import projects
 from helpers.notification import NotificationManager, NotificationType, NotificationPriority
@@ -45,11 +47,15 @@ class Projects(ApiHandler):
                 "error": str(e),
             }
 
+    def _current_user_id(self):
+        return session.get("user_id") or session.get("username") or "single_user"
+
     def get_active_projects_list(self):
-        return projects.get_active_projects_list()
+        items = projects.get_active_projects_list() or []
+        return projects.filter_projects_for_user(items, self._current_user_id())
 
     def get_active_projects_options(self):
-        items = projects.get_active_projects_list() or []
+        items = self.get_active_projects_list() or []
         return [
             {"key": p.get("name", ""), "label": p.get("title", "") or p.get("name", "")}
             for p in items
