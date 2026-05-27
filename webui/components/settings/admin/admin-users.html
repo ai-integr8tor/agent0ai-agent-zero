@@ -1,0 +1,92 @@
+<div class="settings-section" id="section-admin-users" x-init="$store.settings.loadUsers()">
+  <div class="section-header">
+    <div class="section-title">Users</div>
+    <div class="section-description">Manage app logins. Admins can manage all users; regular users can only change their own password.</div>
+    <div class="section-description" x-show="$store.settings.currentAdminUsername">Current login: <strong x-text="$store.settings.currentAdminUsername"></strong></div>
+    <div class="section-description" x-show="$store.settings.usersError" x-text="$store.settings.usersError" style="color: var(--color-error, #ff6b6b);"></div>
+    <div class="section-description" x-show="$store.settings.usersStatus" x-text="$store.settings.usersStatus" style="color: var(--color-success, #7cff7c);"></div>
+  </div>
+
+  <template x-if="$store.settings.currentUserRole === 'admin'">
+    <div>
+      <div class="settings-card">
+        <div class="setting-group">
+          <label>Username</label>
+          <input type="text" x-model="$store.settings.usersForm.username" placeholder="alice" />
+        </div>
+        <div class="setting-group">
+          <label>Password</label>
+          <input type="password" x-model="$store.settings.usersForm.password" placeholder="Required for new users; blank keeps existing password" autocomplete="new-password" />
+        </div>
+        <div class="setting-group">
+          <label>Role</label>
+          <select x-model="$store.settings.usersForm.role">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label>
+            <input type="checkbox" x-model="$store.settings.usersForm.enabled" /> Enabled
+          </label>
+        </div>
+
+        <div class="settings-actions">
+          <button class="primary" @click="$store.settings.saveUser()">Save User</button>
+          <button @click="$store.settings.resetUserForm()">Clear</button>
+          <button @click="$store.settings.loadUsers()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <div class="section-title" style="font-size: 1rem;">Current Users</div>
+        <table class="settings-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Enabled</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-if="!$store.settings.usersList || !$store.settings.usersList.length">
+              <tr><td colspan="4" style="opacity:.7;">No users loaded yet. Click Refresh.</td></tr>
+            </template>
+            <template x-for="user in $store.settings.usersList" :key="user.username">
+              <tr>
+                <td x-text="user.username"></td>
+                <td x-text="user.role"></td>
+                <td x-text="user.enabled ? 'Yes' : 'No'"></td>
+                <td>
+                  <button @click="$store.settings.editUser(user)">Edit</button>
+                  <button @click="$store.settings.deleteUser(user)" x-show="user.username !== $store.settings.currentAdminUsername">Delete</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="section-description" x-show="!$store.settings.usersList.length">No users found. Click Refresh, or create the first user above.</div>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="$store.settings.currentUserRole !== 'admin'">
+    <div class="settings-card">
+      <div class="setting-group">
+        <label>Your username</label>
+        <input type="text" :value="$store.settings.currentAdminUsername" disabled />
+      </div>
+      <div class="setting-group">
+        <label>New password</label>
+        <input type="password" x-model="$store.settings.usersForm.password" placeholder="Enter a new password" autocomplete="new-password" />
+      </div>
+      <p class="project-members-note">You can only change your own password here.</p>
+      <div class="settings-actions">
+        <button class="primary" @click="$store.settings.saveUser()">Change Password</button>
+        <button @click="$store.settings.resetUserForm()">Clear</button>
+        <button @click="$store.settings.loadUsers()">Refresh</button>
+      </div>
+    </div>
+  </template>
+</div>

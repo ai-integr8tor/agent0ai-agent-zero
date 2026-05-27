@@ -10,20 +10,26 @@ class CreateChat(ApiHandler):
         current_ctxid = input.get("current_context", "") # current context id
         new_ctxid = input.get("new_context", guids.generate_id()) # given or new guid
 
-        # context instance - get or create
-        current_context = AgentContext.get(current_ctxid)
+        # context instance - get or create with authorization check
+        current_context = self.use_context(current_ctxid, create_if_not_exists=False) if current_ctxid else None
 
         # get/create new context
         new_context = self.use_context(new_ctxid)
 
         # copy selected data from current to new context
-        if current_context and settings.get_settings().get("chat_inherit_project", True):
-            current_data_1 = current_context.get_data(projects.CONTEXT_DATA_KEY_PROJECT)
-            if current_data_1:
-                new_context.set_data(projects.CONTEXT_DATA_KEY_PROJECT, current_data_1)
-            current_data_2 = current_context.get_output_data(projects.CONTEXT_DATA_KEY_PROJECT)
-            if current_data_2:
-                new_context.set_output_data(projects.CONTEXT_DATA_KEY_PROJECT, current_data_2)
+        current_project_name = ""
+        if current_context:
+            current_project_name = current_context.get_data(projects.CONTEXT_DATA_KEY_PROJECT) or ""
+            current_project_output = current_context.get_output_data(projects.CONTEXT_DATA_KEY_PROJECT) or ""
+            if settings.get_settings().get("chat_inherit_project", True) and current_project_name:
+                new_context.set_data(projects.CONTEXT_DATA_KEY_PROJECT, current_project_name)
+            if settings.get_settings().get("chat_inherit_project", True) and current_project_output:
+                new_context.set_output_data(projects.CONTEXT_DATA_KEY_PROJECT, current_project_output)
+
+            # Preserve structured project metadata when present so project-shared
+            # chats continue to group correctly after a new chat is spawned.
+            if isinstance(current_project_output, dict) and current_project_output:
+                new_context.set_output_data(projects.CONTEXT_DATA_KEY_PROJECT, current_project_output)
 
         # copy model override from current context (only if override is allowed)
         if current_context:

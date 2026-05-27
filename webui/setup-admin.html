@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set up Admin - Agent Zero</title>
+    <link rel="stylesheet" href="/login.css">
+    <link rel="icon" type="image/svg+xml" href="/public/favicon.svg">
+</head>
+<body>
+    <div class="login-container">
+        <form class="login-form" method="POST" action="/setup-admin">
+            <img src="/public/splash.jpg" alt="Agent Zero Logo" class="logo">
+            <h2>Create Admin User</h2>
+            <p class="help-text">Create the first administrator account before using Agent Zero.</p>
+            <div class="input-group">
+                <label for="username">Admin username</label>
+                <input type="text" id="username" name="username" required autocomplete="username" minlength="3" maxlength="64">
+            </div>
+            <div class="input-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8">
+            </div>
+            <div class="input-group">
+                <label for="confirm_password">Confirm password</label>
+                <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" minlength="8">
+            </div>
+            <button type="submit">Create Admin</button>
+            {% if error %}
+                <p class="error">{{ error }}</p>
+            {% endif %}
+        </form>
+    </div>
+</body>
+</html>

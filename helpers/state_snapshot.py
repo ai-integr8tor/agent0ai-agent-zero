@@ -9,6 +9,8 @@ import pytz  # type: ignore[import-untyped]
 
 from agent import AgentContext, AgentContextType
 
+from flask import session
+
 from helpers.dotenv import get_dotenv_value
 from helpers.localization import Localization
 from helpers.task_scheduler import TaskScheduler
@@ -239,7 +241,7 @@ def advance_state_request_after_snapshot(
     )
 
 
-async def build_snapshot_from_request(*, request: StateRequestV1) -> SnapshotV1:
+async def build_snapshot_from_request(*, request: StateRequestV1, user_id: str | None = None) -> SnapshotV1:
     """Build a poll-shaped snapshot for both /poll and state_push."""
 
     localization = Localization.get()
@@ -275,6 +277,22 @@ async def build_snapshot_from_request(*, request: StateRequestV1) -> SnapshotV1:
     processed_contexts: set[str] = set()
     agent_profile_labels = _get_agent_profile_labels()
 
+    if not user_id:
+        try:
+            user_id = session.get("user_id") or session.get("username") or "single_user"
+        except Exception:
+            user_id = "single_user"
+
+    def _context_visible(context_data: dict[str, Any]) -> bool:
+        from helpers import projects
+        project = context_data.get("project")
+        if not isinstance(project, dict):
+            return True
+        project_name = project.get("name")
+        if not project_name:
+            return True
+        return projects.is_user_project_member(project_name, user_id)
+
     all_ctxs = AgentContext.all()
     for ctx in all_ctxs:
         if ctx.id in processed_contexts:
@@ -285,6 +303,9 @@ async def build_snapshot_from_request(*, request: StateRequestV1) -> SnapshotV1:
             continue
 
         context_data = ctx.output()
+        if not _context_visible(context_data):
+            processed_contexts.add(ctx.id)
+            continue
         _apply_agent_profile_metadata(context_data, ctx, agent_profile_labels)
 
         context_task = scheduler.get_task_by_uuid(ctx.id)

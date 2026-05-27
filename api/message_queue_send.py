@@ -7,7 +7,7 @@ class MessageQueueSend(ApiHandler):
     """Send queued message(s) immediately."""
 
     async def process(self, input: dict, request: Request) -> dict | Response:
-        context = AgentContext.get(input.get("context", ""))
+        context = self.use_context(input.get("context", ""), create_if_not_exists=False)
         if not context:
             return Response("Context not found", status=404)
 

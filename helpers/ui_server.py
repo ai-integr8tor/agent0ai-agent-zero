@@ -25,7 +25,7 @@ from uvicorn.middleware.wsgi import WSGIMiddleware
 from werkzeug.wrappers.request import Request as WerkzeugRequest
 import socketio  # type: ignore[import-untyped]
 
-from helpers import dotenv, fasta2a_server, files, git, login, mcp_server, runtime
+from helpers import dotenv, fasta2a_server, files, git, login, mcp_server, runtime, user_store
 from helpers.api import register_api_route, requires_auth
 from helpers.extension import extensible
 from helpers.files import get_abs_path
@@ -117,6 +117,12 @@ class UiServerRuntime:
         handlers = UiRouteHandlers(self)
         self._route_handlers = handlers
         self.webapp.add_url_rule(
+            "/setup-admin",
+            "setup_admin_handler",
+            handlers.setup_admin_handler,
+            methods=["GET", "POST"],
+        )
+        self.webapp.add_url_rule(
             "/login",
             "login_handler",
             handlers.login_handler,
@@ -197,15 +203,53 @@ class UiRouteHandlers:
     def __init__(self, runtime_state: UiServerRuntime) -> None:
         self.runtime = runtime_state
 
+    def _set_authenticated_session(self, auth_user):
+        session.clear()
+        session["authentication"] = login.get_credentials_hash()
+        session["user_id"] = auth_user.get("user_id") or auth_user.get("username")
+        session["username"] = auth_user.get("username")
+        session["role"] = auth_user.get("role", "user")
+        session.permanent = True
+
     @extensible
-    async def login_handler(self):
+    async def setup_admin_handler(self):
+        if not user_store.needs_bootstrap():
+            return redirect(url_for("login_handler"))
+
         error = None
         if request.method == "POST":
-            user = dotenv.get_dotenv_value("AUTH_LOGIN")
-            password = dotenv.get_dotenv_value("AUTH_PASSWORD")
+            username = request.form.get("username", "")
+            password = request.form.get("password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            try:
+                if password != confirm_password:
+                    raise ValueError("Passwords do not match")
+                auth_user = user_store.create_first_admin(username, password)
+                self._set_authenticated_session(auth_user)
+                return redirect(url_for("serve_index"))
+            except Exception as exc:
+                await asyncio.sleep(1)
+                error = str(exc)
 
-            if request.form["username"] == user and request.form["password"] == password:
-                session["authentication"] = login.get_credentials_hash()
+        setup_page_content = files.read_file("webui/setup-admin.html")
+        return render_template_string(setup_page_content, error=error)
+
+    @extensible
+    async def login_handler(self):
+        if user_store.needs_bootstrap():
+            return redirect(url_for("setup_admin_handler"))
+        if login.is_authenticated_session(session):
+            return redirect(url_for("serve_index"))
+
+        error = None
+        if request.method == "POST":
+            auth_user = user_store.authenticate(
+                request.form.get("username", ""),
+                request.form.get("password", ""),
+            )
+
+            if auth_user:
+                self._set_authenticated_session(auth_user)
                 return redirect(url_for("serve_index"))
             else:
                 await asyncio.sleep(1)
@@ -216,7 +260,7 @@ class UiRouteHandlers:
 
     @extensible
     async def logout_handler(self):
-        session.pop("authentication", None)
+        session.clear()
         return redirect(url_for("login_handler"))
 
     @requires_auth
@@ -245,7 +289,7 @@ class UiRouteHandlers:
             version_time=gitinfo["commit_time"],
             runtime_id=runtime.get_runtime_id(),
             runtime_is_development=("true" if runtime.is_development() else "false"),
-            logged_in=("true" if login.get_credentials_hash() else "false"),
+            logged_in=("true" if login.is_login_required() else "false"),
             user_timezone_setting=user_timezone_setting,
             user_time_format_setting=user_time_format_setting,
         )

@@ -96,7 +96,17 @@ class ApiHandler:
     # get context to run agent zero in
     def use_context(self, ctxid: str, create_if_not_exists: bool = True):
         from helpers.context_utils import use_context as _use_context
-        return _use_context(self.thread_lock, ctxid, create_if_not_exists)
+        from helpers import projects
+        from flask import session
+
+        context = _use_context(self.thread_lock, ctxid, create_if_not_exists)
+        if context:
+            project_name = context.get_data(projects.CONTEXT_DATA_KEY_PROJECT)
+            if project_name:
+                current_user_id = session.get("user_id") or session.get("username") or "single_user"
+                if not projects.is_user_project_member(project_name, current_user_id):
+                    raise PermissionError("You are not authorized to access this chat context")
+        return context
 
 
 from helpers.network import is_loopback_address
@@ -136,12 +146,11 @@ def requires_loopback(f):
 def requires_auth(f):
     @wraps(f)
     async def decorated(*args, **kwargs):
-        from helpers import login
+        from helpers import login, user_store
 
-        user_pass_hash = login.get_credentials_hash()
-        if not user_pass_hash:
-            return await f(*args, **kwargs)
-        if session.get("authentication") != user_pass_hash:
+        if user_store.needs_bootstrap():
+            return redirect(url_for("setup_admin_handler"))
+        if not login.is_authenticated_session(session):
             return redirect(url_for("login_handler"))
         return await f(*args, **kwargs)
 

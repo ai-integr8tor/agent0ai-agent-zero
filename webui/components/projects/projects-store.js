@@ -353,9 +353,16 @@ const model = {
       const data = {
         ...this.selectedProject,
       };
+      if (typeof data.members_text === "string") {
+        data.members = data.members_text
+          .split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
       // remove internal fields
       for (const kvp of Object.entries(data))
         if (kvp[0].startsWith("_")) delete data[kvp[0]];
+      delete data.members_text;
 
       // call backend
       const response = await api.callJsonApi("projects", {
@@ -410,6 +417,7 @@ const model = {
       color: "",
       git_url: "",
       git_token: "",
+      members_text: "",
     };
   },
 
@@ -420,11 +428,15 @@ const model = {
         name: name,
       })
     ).data;
+    const members_text = Array.isArray(projectData?.members)
+      ? projectData.members.join("\n")
+      : "";
     return {
       _meta: {
         creating: false,
       },
       ...projectData,
+      members_text,
       llm: this._normalizeProjectLlmData(projectData.llm, name),
     };
   },

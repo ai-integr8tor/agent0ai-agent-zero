@@ -77,6 +77,14 @@ const TAB_ITEMS = Object.freeze([
       { id: "section-update-advanced", label: "Advanced Settings", icon: "tune" },
     ],
   },
+  {
+    id: "users",
+    label: "Users",
+    icon: "group",
+    sections: [
+      { id: "section-admin-users", label: "Manage Users", icon: "group" },
+    ],
+  },
 ]);
 
 // Field button actions (field id -> modal path)
@@ -101,6 +109,14 @@ const model = {
   settings: null,
   additional: null,
   workdirFileStructureTestOutput: "",
+  usersList: [],
+  usersForm: { username: "", password: "", role: "user", enabled: true },
+  usersError: "",
+  usersStatus: "",
+  currentAdminUsername: "",
+  currentUserRole: "user",
+  currentUser: null,
+  usersAvailable: [],
   _activeSection: null,
   _paneScrollHandler: null,
   _paneScrollPane: null,
@@ -154,6 +170,7 @@ const model = {
     }
 
     this.refreshUpdateStatus();
+    if (this.activeTab === "users") await this.loadUsers();
 
     const hashSectionId = this.getHashSectionId();
     const openedHashSection = hashSectionId
@@ -278,11 +295,12 @@ const model = {
     return true;
   },
 
-  enterTab(tabName) {
+  async enterTab(tabName) {
     this.activeTab = tabName;
     this._activeSection = this.getFirstSectionId(this.activeTab);
     this.resetPaneScroll();
     if (tabName === "backup") this.refreshUpdateStatus();
+    if (tabName === "users") await this.loadUsers();
   },
 
   resetPaneScroll() {
@@ -499,6 +517,93 @@ const model = {
   },
 
   // Save settings
+  resetUserForm() {
+    this.usersForm = { username: "", password: "", role: "user", enabled: true };
+  },
+
+  async loadUsers() {
+    this.usersError = "";
+    this.usersStatus = "Loading users...";
+    try {
+      const response = await API.callJsonApi("users", { action: "list" });
+      if (response?.ok) {
+        this.usersList = response.data || [];
+        this.currentAdminUsername = response.current_username || this.currentAdminUsername || "";
+        this.currentUserRole = response.current_role || this.currentUserRole || "user";
+        this.usersStatus = `Loaded ${this.usersList.length} user${this.usersList.length === 1 ? "" : "s"}`;
+      } else {
+        this.usersError = response?.error || "Could not load users";
+        this.usersStatus = "";
+      }
+    } catch (error) {
+      console.error("Error loading users:", error);
+      this.usersError = error?.message || "Error loading users";
+      this.usersStatus = "";
+    }
+  },
+
+  editUser(user) {
+    this.usersForm = {
+      username: user.username || "",
+      password: "",
+      role: user.role || "user",
+      enabled: !!user.enabled,
+    };
+  },
+
+  async saveUser() {
+    try {
+      const currentUsername = this.currentAdminUsername || this.usersForm.username;
+      const isAdmin = (this.currentUserRole || "user") === "admin";
+      const targetUsername = isAdmin ? this.usersForm.username : currentUsername;
+      const action = isAdmin
+        ? (this.usersList.some((u) => u.username === this.usersForm.username) ? "update" : "create")
+        : "update";
+      const response = await API.callJsonApi("users", {
+        action,
+        username: targetUsername,
+        password: this.usersForm.password,
+        role: isAdmin ? this.usersForm.role : undefined,
+        enabled: isAdmin ? this.usersForm.enabled : undefined,
+      });
+      if (response?.ok) {
+        await this.loadUsers();
+        this.resetUserForm();
+        this.usersStatus = isAdmin ? "User saved successfully" : "Password changed successfully";
+        toast(this.usersStatus, "success");
+      } else {
+        const err = response?.error || "Could not save user";
+        this.usersError = err;
+        toast(err, "error");
+      }
+    } catch (error) {
+      console.error("Error saving user:", error);
+      const err = error?.message || "Error saving user";
+      this.usersError = err;
+      toast(err, "error");
+    }
+  },
+
+  async deleteUser(user) {
+    try {
+      const response = await API.callJsonApi("users", { action: "delete", username: user.username });
+      if (response?.ok) {
+        await this.loadUsers();
+        this.usersStatus = "User deleted";
+        toast(this.usersStatus, "success");
+      } else {
+        const err = response?.error || "Could not delete user";
+        this.usersError = err;
+        toast(err, "error");
+      }
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      const err = error?.message || "Error deleting user";
+      this.usersError = err;
+      toast(err, "error");
+    }
+  },
+
   async saveSettings() {
     if (!this.settings) {
       toast("No settings to save", "warning");
