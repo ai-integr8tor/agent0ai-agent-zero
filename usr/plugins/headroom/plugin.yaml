@@ -1,0 +1,10 @@
+name: headroom
+title: Headroom
+description: Compress Agent Zero chat context with Headroom before LLM calls.
+version: 0.1.0
+settings_sections:
+  - agent
+  - developer
+per_project_config: true
+per_agent_config: true
+always_enabled: false
