@@ -1,6 +1,6 @@
 # Open Notebook Plugin for Agent Zero
 
-A knowledge management plugin that integrates [Open Notebook](https://github.com/Open-Notebook) into Agent Zero's WebUI, providing notebooks, source management, name-based fuzzy lookup, notes, and podcast generation — all from a sidebar panel.
+A knowledge management plugin that integrates [Open Notebook](https://github.com/lfnovo/open-notebook) into Agent Zero's WebUI, providing notebooks, source management, name-based fuzzy lookup, notes, and podcast generation — all from a sidebar panel.
 
 ## Features
 
