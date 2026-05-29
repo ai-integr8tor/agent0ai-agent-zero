@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel open-notebook-canvas-surface"
+  data-surface-id="open-notebook"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('open-notebook'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('open-notebook')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('open-notebook')).toString()"
+>
+  <x-component path="/plugins/open-notebook/webui/canvas-panel.html"></x-component>
+</div>

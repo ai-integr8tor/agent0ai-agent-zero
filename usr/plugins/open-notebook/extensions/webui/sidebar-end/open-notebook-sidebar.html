@@ -1,0 +1,27 @@
+<html>
+<head>
+  <title>Open Notebook Sidebar</title>
+  <script type="module">
+    import { store } from "/plugins/open-notebook/webui/open-notebook-store.js";
+  </script>
+</head>
+<body>
+
+<!-- ── Icon button (sidebar bottom) ── -->
+<div x-data>
+    <button 
+        class="on-icon-btn" 
+        :class="{ 'on-icon-btn--active': $store.openNotebookStore?.isOpen }"
+        @click="$store.openNotebookStore?.openViaCanvas()" 
+        title="Open Notebook"
+    >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        <span style="margin-left: 0.5rem; font-size: var(--font-size-small);">Open Notebook</span>
+    </button>
+</div>
+
+</body>
+</html>

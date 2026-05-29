@@ -1,0 +1,489 @@
+<html>
+<head>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+  </style>
+  <script type="module">
+    import { store } from "/plugins/open-notebook/webui/open-notebook-store.js";
+  </script>
+</head>
+<body>
+
+<div id="on-canvas-panel" class="on-canvas-content" data-surface-id="open-notebook">
+
+    <!-- Loading Overlay -->
+    <div class="on-loading" x-show="&#36;store.openNotebookStore?.loading" style="display:none">
+        <div class="on-spinner"></div>
+    </div>
+
+    <!-- Error Banner -->
+    <div class="on-error-banner" x-show="&#36;store.openNotebookStore?.error" x-transition style="display:none">
+        <span x-text="&#36;store.openNotebookStore?.error"></span>
+        <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.error = null)" style="margin-left:auto;font-size:1.2em">✕</button>
+    </div>
+
+    <!-- Top Bar -->
+    <div class="on-topbar">
+        <button x-show="&#36;store.openNotebookStore?.hasNotebookSelected"
+                @click="&#36;store.openNotebookStore?.goBack()"
+                class="on-btn on-btn--ghost" title="Back">←</button>
+        <span class="on-topbar__title"
+              x-text="&#36;store.openNotebookStore?.hasNotebookSelected ? (&#36;store.openNotebookStore?.selectedNotebook?.name || 'Notebook') : 'Open Notebook'"></span>
+        <span class="on-topbar__dot" :style="'background:' + (&#36;store.openNotebookStore?.statusColor || 'gray')"></span>
+        <div class="on-topbar__actions">
+            <button x-show="&#36;store.openNotebookStore?.hasNotebookSelected"
+                    class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore?.refreshCurrentTab()" title="Refresh">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            </button>
+
+            <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore?.closeViaCanvas()" title="Close">✕</button>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         NOTEBOOK LIST (Homepage)
+         ============================================================ -->
+    <div x-show="!&#36;store.openNotebookStore?.hasNotebookSelected" class="on-scroll">
+
+        <!-- Create Notebook -->
+        <div style="margin:8px">
+            <button class="on-btn on-btn--primary" style="width:100%"
+                    x-show="!&#36;store.openNotebookStore?.showCreateNotebook"
+                    @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.showCreateNotebook = true)">
+                + New Notebook
+            </button>
+            <div x-show="&#36;store.openNotebookStore?.showCreateNotebook" x-transition style="display:none">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <input type="text" class="on-query-bar__input" placeholder="Notebook name"
+                           :value="&#36;store.openNotebookStore?.newNotebookName || ''"
+                           @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.newNotebookName = &#36;event.target.value)">
+                    <textarea class="on-journal__input" placeholder="Description (optional)" rows="2"
+                              :value="&#36;store.openNotebookStore?.newNotebookDesc || ''"
+                              @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.newNotebookDesc = &#36;event.target.value)"></textarea>
+                    <div style="display:flex;gap:6px">
+                        <button class="on-btn on-btn--primary" style="flex:1"
+                                @click="&#36;store.openNotebookStore?.createNotebook(&#36;store.openNotebookStore?.newNotebookName, &#36;store.openNotebookStore?.newNotebookDesc)">Create</button>
+                        <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.showCreateNotebook = false)">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notebook List -->
+        <div class="on-section-header" style="padding:8px 12px">Notebooks</div>
+        <div class="on-list">
+            <template x-for="nb in (&#36;store.openNotebookStore?.notebooks || [])" :key="nb.id">
+                <div class="on-list-item" style="position:relative">
+                    <div style="flex:1;cursor:pointer;min-width:0" @click="&#36;store.openNotebookStore?.selectNotebook(nb.id)">
+                        <div class="on-card__title" x-text="nb.name"></div>
+                        <div class="on-card__meta" x-text="nb.description || nb.path || ''"></div>
+                    </div>
+                    <button class="on-btn on-btn--ghost" style="flex-shrink:0"
+                            @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = nb.id, &#36;store.openNotebookStore._menuPos = {top: &#36;event.clientY, left: &#36;event.clientX - 160})">⋮</button>
+                    <div class="on-context-menu" x-show="&#36;store.openNotebookStore?._activeMenuId === nb.id" @click.away="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = null)" style="display:none">
+                        <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.renameNotebook(nb.id, prompt('Rename notebook:', nb.name)); &#36;store.openNotebookStore._activeMenuId = null">Rename</button>
+                        <button class="on-context-menu__item on-context-menu__item--danger" @click="if(confirm('Delete notebook?'))&#36;store.openNotebookStore?.deleteNotebook(nb.id);&#36;store.openNotebookStore._activeMenuId=null">Delete</button>
+                    </div>
+                </div>
+            </template>
+        </div>
+        <div class="on-empty" x-show="!&#36;store.openNotebookStore?.loading && (!&#36;store.openNotebookStore?.notebooks || &#36;store.openNotebookStore.notebooks.length === 0)">
+            No notebooks found. Create one to get started.
+        </div>
+    </div>
+
+    <!-- ============================================================
+         SELECTED NOTEBOOK DETAIL
+         ============================================================ -->
+    <div x-show="&#36;store.openNotebookStore?.hasNotebookSelected" class="on-notebook-detail" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+
+        <!-- Tab Navigation -->
+        <div class="on-tabs">
+            <template x-for="tab in ['sources', 'notes', 'podcasts', 'chat']" :key="tab">
+                <button class="on-tab"
+                        :class="{ 'on-tab--active': &#36;store.openNotebookStore?.activeTab === tab }"
+                        @click="&#36;store.openNotebookStore?.selectTab(tab)"
+                        x-text="tab.charAt(0).toUpperCase() + tab.slice(1)"></button>
+            </template>
+        </div>
+
+        <!-- ═══════ SOURCES TAB ═══════ -->
+        <div x-show="&#36;store.openNotebookStore?.activeTab === 'sources'" class="on-scroll on-tab-pane--sources" style="display:none;flex:1;min-height:0">
+
+            <!-- Transformation Selector -->
+            <div x-show="&#36;store.openNotebookStore?.transformations?.length" style="padding:8px 12px">
+                <select style="width:100%;padding:6px 8px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background);color:var(--color-text);font-size:0.85em"
+                        :value="&#36;store.openNotebookStore?.selectedTransformationId || ''"
+                        @change="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.selectedTransformationId = &#36;event.target.value)">
+                    <option value="" disabled>Select transformation…</option>
+                    <template x-for="t in (&#36;store.openNotebookStore?.transformations || [])" :key="t.id">
+                        <option :value="t.id" x-text="t.name + (t.apply_default ? ' ★' : '')"></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Import Button -->
+            <div style="padding:4px 12px">
+                <button class="on-btn on-btn--primary" style="width:100%" @click="&#36;store.openNotebookStore?.toggleSourceImport()">
+                    <span x-text="&#36;store.openNotebookStore?.showSourceImport ? 'Cancel Import' : '+ Add Source'"></span>
+                </button>
+            </div>
+
+            <!-- Source Import Form -->
+            <div x-show="&#36;store.openNotebookStore?.showSourceImport" x-transition style="display:none;padding:8px 12px">
+                <div class="on-card">
+                    <div style="display:flex;gap:4px;margin-bottom:8px">
+                        <template x-for="it in [{id:'url',label:'URL'},{id:'text',label:'Text'},{id:'file',label:'File'}]" :key="it.id">
+                            <button class="on-tab" style="flex:1"
+                                    :class="{ 'on-tab--active': &#36;store.openNotebookStore?.sourceImportTab === it.id }"
+                                    @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.sourceImportTab = it.id)"
+                                    x-text="it.label"></button>
+                        </template>
+                    </div>
+                    <input type="text" class="on-journal__input" placeholder="Title (optional)"
+                           :value="&#36;store.openNotebookStore?.sourceImportTitle || ''"
+                           @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.sourceImportTitle = &#36;event.target.value)"
+                           style="margin-bottom:6px">
+                    <!-- URL Tab -->
+                    <div x-show="&#36;store.openNotebookStore?.sourceImportTab === 'url'" style="display:none">
+                        <input type="url" class="on-journal__input" placeholder="https://example.com/article"
+                               :value="&#36;store.openNotebookStore?.sourceImportUrl || ''"
+                               @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.sourceImportUrl = &#36;event.target.value)"
+                               @keydown.enter="&#36;store.openNotebookStore?.addSourceUrl()">
+                    </div>
+                    <!-- Text Tab -->
+                    <div x-show="&#36;store.openNotebookStore?.sourceImportTab === 'text'" style="display:none">
+                        <textarea class="on-journal__input" placeholder="Paste your text content here…" rows="5"
+                                  :value="&#36;store.openNotebookStore?.sourceImportContent || ''"
+                                  @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.sourceImportContent = &#36;event.target.value)"></textarea>
+                    </div>
+                    <!-- File Tab -->
+                    <div x-show="&#36;store.openNotebookStore?.sourceImportTab === 'file'" style="display:none">
+                        <input type="file" style="width:100%;font-size:0.85em;color:var(--color-text-muted)"
+                               @change="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._pendingFile = &#36;event.target.files[0])">
+                    </div>
+                    <button class="on-btn on-btn--primary" style="width:100%;margin-top:8px"
+                            :disabled="&#36;store.openNotebookStore?.sourceImportLoading"
+                            @click="&#36;store.openNotebookStore?.sourceImportTab === 'url' ? &#36;store.openNotebookStore?.addSourceUrl() : (&#36;store.openNotebookStore?.sourceImportTab === 'text' ? &#36;store.openNotebookStore?.addSourceText() : &#36;store.openNotebookStore?.addSourceFile(&#36;store.openNotebookStore?._pendingFile))">
+                        <span x-show="!&#36;store.openNotebookStore?.sourceImportLoading">Import</span>
+                        <span x-show="&#36;store.openNotebookStore?.sourceImportLoading" class="on-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Source Insights Panel -->
+            <div x-show="&#36;store.openNotebookStore?.showSourceInsights" x-transition style="display:none;padding:8px 12px">
+                <div class="on-card" style="border-color:var(--color-secondary)">
+                    <div class="on-section-header" style="display:flex;justify-content:space-between;align-items:center">
+                        <span>Insights</span>
+                        <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.showSourceInsights = false, &#36;store.openNotebookStore.activeInsightSourceId = null)">✕</button>
+                    </div>
+                    <template x-for="insight in (&#36;store.openNotebookStore?.sourceInsights || [])" :key="insight.id">
+                        <div style="padding:8px 0;border-bottom:1px solid var(--color-border)">
+                            <div style="font-weight:600;font-size:0.9em" x-text="insight.title || insight.name || 'Insight'"></div>
+                            <div style="font-size:0.85em;margin-top:4px" x-html="&#36;store.openNotebookStore?.md(insight.content || insight.text || '')"></div>
+                            <div style="display:flex;gap:6px;margin-top:6px">
+                                <button class="on-btn on-btn--ghost" style="font-size:0.8em" @click="&#36;store.openNotebookStore?.saveInsightAsNote(insight.id)">💾 Save as Note</button>
+                                <button class="on-btn on-btn--ghost on-btn--danger" style="font-size:0.8em" @click="&#36;store.openNotebookStore?.deleteInsight(insight.id)">🗑️</button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="!&#36;store.openNotebookStore?.sourceInsights?.length" style="color:var(--color-text-muted);text-align:center;padding:12px">No insights generated yet.</div>
+                </div>
+            </div>
+
+            <!-- Related Sources Panel -->
+            <div x-show="&#36;store.openNotebookStore?.relatedResults" x-transition style="display:none;padding:8px 12px">
+                <div class="on-card" style="border-color:var(--color-accent)">
+                    <div class="on-section-header" style="display:flex;justify-content:space-between;align-items:center">
+                        <span>Related Sources</span>
+                        <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore?.clearRelated()">✕</button>
+                    </div>
+                    <div x-show="&#36;store.openNotebookStore?.relatedLoading" style="text-align:center;padding:8px">
+                        <span class="on-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    </div>
+                    <template x-for="rel in (&#36;store.openNotebookStore?.relatedResults || [])" :key="rel.id">
+                        <div style="padding:6px 0;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:8px">
+                            <span class="on-badge" :class="rel.type === 'link' ? 'on-badge--url' : (rel.type === 'text' ? 'on-badge--text' : 'on-badge--file')" x-text="rel.type"></span>
+                            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="rel.title || rel.name || 'Source'"></span>
+                        </div>
+                    </template>
+                    <div x-show="&#36;store.openNotebookStore?.relatedResults?.length === 0 && !&#36;store.openNotebookStore?.relatedLoading" style="color:var(--color-text-muted);text-align:center;padding:12px;font-size:0.85em">No related sources found.</div>
+                </div>
+            </div>
+
+            <!-- Source Chat Panel -->
+            <div x-show="&#36;store.openNotebookStore?.activeSourceChatId" x-transition class="on-source-chat" style="display:none;padding:8px 12px">
+                <div class="on-card" style="border-color:var(--color-secondary);display:flex;flex-direction:column;max-height:400px">
+                    <div class="on-section-header" style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+                        <span>Source Chat</span>
+                        <button class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore?.closeSourceChat()">✕</button>
+                    </div>
+                    <div class="on-chat-messages" style="flex:1;overflow-y:auto;min-height:0">
+                        <template x-for="(msg, idx) in (&#36;store.openNotebookStore?.sourceChatMessages || [])" :key="idx">
+                            <div class="on-chat-bubble" :class="msg.type === 'human' ? 'on-chat-bubble--human' : 'on-chat-bubble--ai'">
+                                <div class="on-chat-bubble__label" x-text="msg.type === 'human' ? 'You' : 'AI'"></div>
+                                <div class="on-chat-bubble__content" x-html="msg.type === 'ai' ? &#36;store.openNotebookStore?.md(msg.content) : msg.content"></div>
+                            </div>
+                        </template>
+                        <div x-show="&#36;store.openNotebookStore?.sourceChatLoading" class="on-chat-typing">
+                            <span class="on-spinner" style="width:14px;height:14px;border-width:2px"></span> Thinking…
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-shrink:0;padding-top:6px">
+                        <input type="text" class="on-journal__input" placeholder="Ask about this source…"
+                               :value="&#36;store.openNotebookStore?.sourceChatInput || ''"
+                               @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.sourceChatInput = &#36;event.target.value)"
+                               @keydown.enter="&#36;store.openNotebookStore?.sendSourceChatMessage()"
+                               style="flex:1">
+                        <button class="on-btn on-btn--primary" @click="&#36;store.openNotebookStore?.sendSourceChatMessage()" :disabled="&#36;store.openNotebookStore?.sourceChatLoading">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sources List -->
+            <div class="on-list" style="padding:4px 0">
+                <template x-for="source in (&#36;store.openNotebookStore?.sources || [])" :key="source.id">
+                    <div class="on-list-item" style="position:relative">
+                        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                            <span class="on-dot" :class="source.status === 'ready' || source.embedding_status === 'ready' ? 'on-dot--ready' : (source.status === 'error' || source.embedding_status === 'error' ? 'on-dot--error' : 'on-dot--processing')"></span>
+                            <span class="on-badge" :class="source.type === 'link' ? 'on-badge--url' : (source.type === 'text' ? 'on-badge--text' : 'on-badge--file')" x-text="source.type"></span>
+                            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500" x-text="source.title || source.name || 'Untitled'"></span>
+                        </div>
+                        <button class="on-btn on-btn--ghost" style="flex-shrink:0"
+                                @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = 'src-' + source.id, &#36;store.openNotebookStore._menuPos = {top: &#36;event.clientY, left: &#36;event.clientX - 180})">⋮</button>
+                        <div class="on-context-menu" x-show="&#36;store.openNotebookStore?._activeMenuId === 'src-' + source.id" @click.away="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = null)" style="display:none">
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.openSourceChat(source.id); &#36;store.openNotebookStore._activeMenuId = null">💬 Chat</button>
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.getSourceInsights(source.id); &#36;store.openNotebookStore._activeMenuId = null">💡 Insights</button>
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.findRelated(source); &#36;store.openNotebookStore._activeMenuId = null">🔗 Related</button>
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.sendSourceToChat(source.id); &#36;store.openNotebookStore._activeMenuId = null">→ A0 Chat</button>
+                            <button class="on-context-menu__item on-context-menu__item--danger" @click="if(confirm('Delete this source?')){&#36;store.openNotebookStore?.deleteSource(source.id)}; &#36;store.openNotebookStore._activeMenuId = null">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="on-empty" x-show="!&#36;store.openNotebookStore?.loading && (!&#36;store.openNotebookStore?.sources || &#36;store.openNotebookStore.sources.length === 0) && !&#36;store.openNotebookStore?.showSourceImport">
+                No sources yet. Add a source to get started.
+            </div>
+        </div>
+
+        <!-- ═══════ NOTES TAB ═══════ -->
+        <div x-show="&#36;store.openNotebookStore?.activeTab === 'notes'" class="on-scroll on-tab-pane--notes" style="display:none;flex:1;min-height:0">
+
+            <!-- Quick Journal Form -->
+            <div class="on-journal" style="padding:12px">
+                <div class="on-journal__row" style="display:flex;gap:6px;margin-bottom:6px">
+                    <input type="text" class="on-journal__input" placeholder="Note title…"
+                           :value="&#36;store.openNotebookStore?.newNoteTitle || ''"
+                           @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.newNoteTitle = &#36;event.target.value)"
+                           style="flex:1">
+                </div>
+                <textarea class="on-journal__input" placeholder="Write a note… (Ctrl+Enter to save)" rows="3"
+                          :value="&#36;store.openNotebookStore?.newNoteContent || ''"
+                          @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.newNoteContent = &#36;event.target.value)"
+                          @keydown.ctrl.enter="&#36;store.openNotebookStore?.createNote(&#36;store.openNotebookStore?.newNoteTitle, &#36;store.openNotebookStore?.newNoteContent)"></textarea>
+                <div style="display:flex;justify-content:flex-end;margin-top:6px">
+                    <button class="on-btn on-btn--primary"
+                            :disabled="&#36;store.openNotebookStore?.savingNote || !&#36;store.openNotebookStore?.newNoteTitle?.trim()"
+                            @click="&#36;store.openNotebookStore?.createNote(&#36;store.openNotebookStore?.newNoteTitle, &#36;store.openNotebookStore?.newNoteContent)">
+                        <span x-show="!&#36;store.openNotebookStore?.savingNote">Save Note</span>
+                        <span x-show="&#36;store.openNotebookStore?.savingNote" class="on-spinner" style="width:14px;height:14px;border-width:2px"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Notes List -->
+            <div class="on-list" style="padding:4px 0">
+                <template x-for="note in (&#36;store.openNotebookStore?.notes || [])" :key="note.id">
+                    <div class="on-list-item" style="position:relative;flex-direction:column;align-items:stretch">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span class="on-badge" :class="note.note_type === 'ai' ? 'on-badge--url' : 'on-badge--text'" x-text="note.note_type || 'human'" style="flex-shrink:0"></span>
+                            <div style="flex:1;min-width:0">
+                                <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="note.title || 'Untitled'"></div>
+                            </div>
+                            <button class="on-btn on-btn--ghost" style="flex-shrink:0"
+                                    @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = 'note-' + note.id, &#36;store.openNotebookStore._menuPos = {top: &#36;event.clientY, left: &#36;event.clientX - 180})">⋮</button>
+                        </div>
+                        <div style="font-size:0.85em;color:var(--color-text-muted);margin-top:4px;max-height:120px;overflow-y:auto;padding-left:4px"
+                             x-html="&#36;store.openNotebookStore?.md(note.content || '')"></div>
+                        <div class="on-context-menu" x-show="&#36;store.openNotebookStore?._activeMenuId === 'note-' + note.id" @click.away="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = null)" style="display:none">
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.sendNoteToChat(note.id); &#36;store.openNotebookStore._activeMenuId = null">→ A0 Chat</button>
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.copyMessage(note.content); &#36;store.openNotebookStore._activeMenuId = null">📋 Copy</button>
+                            <button class="on-context-menu__item on-context-menu__item--danger" @click="if(confirm('Delete this note?')){&#36;store.openNotebookStore?.deleteNote(note.id)}; &#36;store.openNotebookStore._activeMenuId = null">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="on-empty" x-show="!&#36;store.openNotebookStore?.loading && (!&#36;store.openNotebookStore?.notes || &#36;store.openNotebookStore.notes.length === 0)">
+                No notes yet. Write your first note above.
+            </div>
+        </div>
+
+        <!-- ═══════ PODCASTS TAB ═══════ -->
+        <div x-show="&#36;store.openNotebookStore?.activeTab === 'podcasts'" class="on-scroll on-tab-pane--podcasts" style="display:none;flex:1;min-height:0">
+
+            <!-- Generate Button -->
+            <div style="padding:8px 12px">
+                <button class="on-btn on-btn--primary" style="width:100%"
+                        @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.showGenerateForm = !&#36;store.openNotebookStore.showGenerateForm); &#36;store.openNotebookStore?.loadPodcastProfiles()">
+                    <span x-text="&#36;store.openNotebookStore?.showGenerateForm ? 'Cancel' : '+ Generate Podcast'"></span>
+                </button>
+            </div>
+
+            <!-- Generate Form -->
+            <div x-show="&#36;store.openNotebookStore?.showGenerateForm" x-transition style="display:none;padding:4px 12px 12px">
+                <div class="on-card">
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <input type="text" class="on-journal__input" placeholder="Episode name *"
+                               :value="&#36;store.openNotebookStore?.generateForm?.episode_name || ''"
+                               @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.generateForm.episode_name = &#36;event.target.value)">
+                        <select style="width:100%;padding:6px 8px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background);color:var(--color-text);font-size:0.85em"
+                                :value="&#36;store.openNotebookStore?.generateForm?.episode_profile || ''"
+                                @change="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.generateForm.episode_profile = &#36;event.target.value)">
+                            <option value="" disabled>Select episode profile…</option>
+                            <template x-for="p in (&#36;store.openNotebookStore?.episodeProfiles || [])" :key="p.name">
+                                <option :value="p.name" x-text="p.name"></option>
+                            </template>
+                        </select>
+                        <select style="width:100%;padding:6px 8px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background);color:var(--color-text);font-size:0.85em"
+                                :value="&#36;store.openNotebookStore?.generateForm?.speaker_profile || ''"
+                                @change="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.generateForm.speaker_profile = &#36;event.target.value)">
+                            <option value="" disabled>Select speaker profile…</option>
+                            <template x-for="p in (&#36;store.openNotebookStore?.speakerProfiles || [])" :key="p.name">
+                                <option :value="p.name" x-text="p.name"></option>
+                            </template>
+                        </select>
+                        <textarea class="on-journal__input" placeholder="Custom content (optional)" rows="3"
+                                  :value="&#36;store.openNotebookStore?.generateForm?.content || ''"
+                                  @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.generateForm.content = &#36;event.target.value)"></textarea>
+                        <button class="on-btn on-btn--primary" style="width:100%" @click="&#36;store.openNotebookStore?.generatePodcast()">
+                            Generate
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Job Status -->
+            <div x-show="&#36;store.openNotebookStore?.generatingJob" x-transition style="display:none;padding:4px 12px">
+                <div class="on-card" style="border-color:var(--color-accent)">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span x-show="&#36;store.openNotebookStore?.generatingJob?.status === 'pending' || &#36;store.openNotebookStore?.generatingJob?.status === 'running'" class="on-dot on-dot--processing"></span>
+                        <span x-show="&#36;store.openNotebookStore?.generatingJob?.status === 'completed'" class="on-dot on-dot--ready"></span>
+                        <span x-show="&#36;store.openNotebookStore?.generatingJob?.status === 'error'" class="on-dot on-dot--error"></span>
+                        <div style="flex:1">
+                            <div style="font-weight:600" x-text="&#36;store.openNotebookStore?.generatingJob?.status === 'pending' ? 'Queued…' : (&#36;store.openNotebookStore?.generatingJob?.status === 'running' ? 'Generating…' : (&#36;store.openNotebookStore?.generatingJob?.status === 'completed' ? 'Complete!' : 'Error'))"></div>
+                            <div x-show="&#36;store.openNotebookStore?.generatingJob?.message" style="font-size:0.8em;color:var(--color-text-muted)" x-text="&#36;store.openNotebookStore?.generatingJob?.message"></div>
+                        </div>
+                        <button x-show="&#36;store.openNotebookStore?.generatingJob?.status === 'completed' || &#36;store.openNotebookStore?.generatingJob?.status === 'error'" class="on-btn on-btn--ghost" @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.generatingJob = null)">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Episodes List -->
+            <div class="on-list" style="padding:4px 0">
+                <template x-for="ep in (&#36;store.openNotebookStore?.episodes || [])" :key="ep.id">
+                    <div class="on-audio-item" style="position:relative">
+                        <button class="on-play-btn" @click="&#36;store.openNotebookStore?.playAudio(ep.id)">
+                            <span x-show="&#36;store.openNotebookStore?.currentEpisodeId !== ep.id || !&#36;store.openNotebookStore?.isPlaying">▶</span>
+                            <span x-show="&#36;store.openNotebookStore?.currentEpisodeId === ep.id && &#36;store.openNotebookStore?.isPlaying" style="display:none">⏸</span>
+                        </button>
+                        <div style="flex:1;min-width:0">
+                            <div class="on-card__title" style="font-size:0.9em" x-text="ep.name || ep.title || 'Untitled'"></div>
+                            <div class="on-card__meta" x-text="ep.created_at ? new Date(ep.created_at).toLocaleDateString() : ''"></div>
+                        </div>
+                        <button class="on-btn on-btn--ghost" style="flex-shrink:0"
+                                @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = 'ep-' + ep.id, &#36;store.openNotebookStore._menuPos = {top: &#36;event.clientY, left: &#36;event.clientX - 180})">⋮</button>
+                        <div class="on-context-menu" x-show="&#36;store.openNotebookStore?._activeMenuId === 'ep-' + ep.id" @click.away="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = null)" style="display:none">
+                            <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.sendPodcastToChat(ep.id); &#36;store.openNotebookStore._activeMenuId = null">→ A0 Chat</button>
+                            <button class="on-context-menu__item on-context-menu__item--danger" @click="if(confirm('Delete this episode?')){&#36;store.openNotebookStore?.deleteEpisode(ep.id)}; &#36;store.openNotebookStore._activeMenuId = null">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="on-empty" x-show="!&#36;store.openNotebookStore?.loading && (!&#36;store.openNotebookStore?.episodes || &#36;store.openNotebookStore.episodes.length === 0) && !&#36;store.openNotebookStore?.generatingJob">
+                No podcast episodes yet. Generate one to get started.
+            </div>
+        </div>
+
+        <!-- ═══════ CHAT TAB ═══════ -->
+        <div x-show="&#36;store.openNotebookStore?.activeTab === 'chat'" class="on-tab-pane--chat" style="flex:1;min-height:0;overflow:hidden">
+
+            <!-- Session Selector -->
+            <div x-show="&#36;store.openNotebookStore?.chatSessions?.length > 0 && !&#36;store.openNotebookStore?.chatSessionId" style="padding:8px 12px;flex:1;overflow-y:auto">
+                <div class="on-section-header" style="display:flex;justify-content:space-between;align-items:center">
+                    <span>Chat Sessions</span>
+                    <button class="on-btn on-btn--primary" style="font-size:0.8em" @click="&#36;store.openNotebookStore?.newChat()">+ New</button>
+                </div>
+                <div class="on-list" style="padding:4px 0">
+                    <template x-for="sess in (&#36;store.openNotebookStore?.chatSessions || [])" :key="sess.id">
+                        <div class="on-list-item" style="position:relative">
+                            <div style="flex:1;cursor:pointer;min-width:0" @click="&#36;store.openNotebookStore?.loadChatSessionMessages(sess.id)">
+                                <div style="font-weight:500" x-text="sess.title || 'Untitled'"></div>
+                                <div style="font-size:0.8em;color:var(--color-text-muted)" x-text="sess.created_at ? new Date(sess.created_at).toLocaleDateString() : ''"></div>
+                            </div>
+                            <button class="on-btn on-btn--ghost" style="flex-shrink:0"
+                                    @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = 'sess-' + sess.id, &#36;store.openNotebookStore._menuPos = {top: &#36;event.clientY, left: &#36;event.clientX - 180})">⋮</button>
+                            <div class="on-context-menu" x-show="&#36;store.openNotebookStore?._activeMenuId === 'sess-' + sess.id" @click.away="&#36;store.openNotebookStore && (&#36;store.openNotebookStore._activeMenuId = null)" style="display:none">
+                                <button class="on-context-menu__item" @click="&#36;store.openNotebookStore?.renameChatSession(sess.id, prompt('Rename session:', sess.title)); &#36;store.openNotebookStore._activeMenuId = null">Rename</button>
+                                <button class="on-context-menu__item on-context-menu__item--danger" @click="if(confirm('Delete this session?')){&#36;store.openNotebookStore?.deleteChatSession(sess.id)}; &#36;store.openNotebookStore._activeMenuId=null">🗑️ Delete</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Active Chat View -->
+            <div x-show="&#36;store.openNotebookStore?.chatSessionId || !&#36;store.openNotebookStore?.chatSessions?.length" style="flex:1;overflow:hidden" class="on-chat-active-view">
+                <!-- Back to sessions -->
+                <div x-show="&#36;store.openNotebookStore?.chatSessionId && &#36;store.openNotebookStore?.chatSessions?.length > 1" style="padding:4px 8px;border-bottom:1px solid var(--color-border)">
+                    <button class="on-btn on-btn--ghost" style="font-size:0.8em" @click="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.chatSessionId = null, &#36;store.openNotebookStore.chatMessages = [])">
+                        ← All Sessions
+                    </button>
+                </div>
+
+                <!-- Chat Messages -->
+                <div class="on-chat-messages" style="flex:1;overflow-y:auto;padding:8px 12px;min-height:0">
+                    <template x-for="(msg, idx) in (&#36;store.openNotebookStore?.chatMessages || [])" :key="idx">
+                        <div class="on-chat-bubble" :class="msg.type === 'human' ? 'on-chat-bubble--human' : 'on-chat-bubble--ai'">
+                            <div class="on-chat-bubble__label" style="display:flex;justify-content:space-between;align-items:center">
+                                <span x-text="msg.type === 'human' ? 'You' : 'AI'"></span>
+                                <div x-show="msg.type === 'ai'" style="display:flex;gap:4px">
+                                    <button class="on-btn on-btn--ghost" style="font-size:0.7em;padding:2px 4px" @click="&#36;store.openNotebookStore?.saveChatReplyAsNote(msg.content)" title="Save as note">💾</button>
+                                    <button class="on-btn on-btn--ghost" style="font-size:0.7em;padding:2px 4px" @click="&#36;store.openNotebookStore?.sendChatMsgToChat(msg.content)" title="Send to A0 chat">→</button>
+                                    <button class="on-btn on-btn--ghost" style="font-size:0.7em;padding:2px 4px" @click="&#36;store.openNotebookStore?.copyMessage(msg.content)" title="Copy">📋</button>
+                                </div>
+                            </div>
+                            <div class="on-chat-bubble__content" x-html="msg.type === 'ai' ? &#36;store.openNotebookStore?.md(msg.content) : msg.content"></div>
+                        </div>
+                    </template>
+                    <div x-show="&#36;store.openNotebookStore?.chatLoading" class="on-chat-typing">
+                        <span class="on-spinner" style="width:14px;height:14px;border-width:2px"></span> Thinking…
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div style="padding:8px 12px;border-top:1px solid var(--color-border);flex-shrink:0">
+                    <div style="display:flex;gap:6px;align-items:flex-end">
+                        <textarea class="on-journal__input" placeholder="Ask anything about your notebook…" rows="2"
+                                  style="flex:1;resize:none;min-height:36px;max-height:120px"
+                                  :value="&#36;store.openNotebookStore?.chatInput || ''"
+                                  @input="&#36;store.openNotebookStore && (&#36;store.openNotebookStore.chatInput = &#36;event.target.value); &#36;event.target.style.height='auto'; &#36;event.target.style.height=Math.min(&#36;event.target.scrollHeight, 120)+'px'"
+                                  @keydown.enter.prevent="&#36;event.shiftKey || &#36;store.openNotebookStore?.sendChatMessage()"></textarea>
+                        <button class="on-btn on-btn--primary" @click="&#36;store.openNotebookStore?.sendChatMessage()" :disabled="&#36;store.openNotebookStore?.chatLoading" style="flex-shrink:0">
+                            <span x-show="!&#36;store.openNotebookStore?.chatLoading">↑</span>
+                            <span x-show="&#36;store.openNotebookStore?.chatLoading" class="on-spinner" style="width:14px;height:14px;border-width:2px;display:none"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /selected notebook detail -->
+
+    <!-- Hidden Audio Player -->
+    <audio id="on-audio-player" style="display:none"></audio>
+
+</div><!-- /on-canvas-panel -->
+
+</body>
+</html>

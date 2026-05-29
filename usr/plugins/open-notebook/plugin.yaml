@@ -1,0 +1,24 @@
+name: open-notebook
+title: Open Notebook
+description: Bridge to Open Notebook personal knowledge management system. Browse notebooks, manage sources, perform name-based fuzzy lookup, and create notes through conversational AI.
+version: 0.1.0
+author: Agent Zero Community
+license: MIT
+repository: https://github.com/agent-zero/open-notebook
+homepage: https://github.com/agent-zero/open-notebook
+per_project_config: true
+per_agent_config: false
+always_enabled: true
+
+settings:
+  api_url:
+    type: string
+    default: "http://host.docker.internal:5055"
+    description: "Open Notebook API URL"
+  read_only:
+    type: boolean
+    default: false
+  confirmations:
+    type: boolean
+    default: true
+    description: "When true, ask for confirmation before destructive operations"
