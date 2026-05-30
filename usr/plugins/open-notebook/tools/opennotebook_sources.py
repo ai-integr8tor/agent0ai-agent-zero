@@ -36,7 +36,7 @@ import config
 import client
 import errors
 sys.modules.pop('shared', None)
-from shared import format_date, format_status, get_asset_type, handle_error
+from shared import format_date, format_status, get_asset_type, handle_error, prepare_content_for_backend
 
 # Limits for display — prevents overwhelming output
 _MAX_SOURCES = 20
@@ -50,19 +50,30 @@ def _detect_and_prepare(content: str, title: str, notebook_id: str) -> tuple:
     """Auto-detect source type from content and build form-encoded request data.
 
     Detection logic:
+        - Local file path (with known extension) → read file locally, then process
         - URL (http:// or https://) → type 'link', sets 'url' field
-        - File path with known extension → type 'text', sets 'content' field
         - Everything else → type 'text', sets 'content' field (raw text)
 
     Args:
-        content: The raw content string (URL, file path, or text).
+        content: The raw content string (URL, file path, or raw text).
         title: Optional title for the source (may be empty string).
         notebook_id: Target notebook ID.
 
     Returns:
         tuple: (source_type_string, request_data_dict) where request_data_dict
                is suitable for the ``data=`` parameter of httpx.post (form-encoded).
+
+    Raises:
+        ValueError: If content looks like a local file path but cannot be read.
     """
+    # First, detect and read local file content if applicable
+    # This matches the pattern used in notes and podcasts tools
+    try:
+        content = prepare_content_for_backend(content)
+    except ValueError:
+        # Let this propagate up - it's a user-facing error for invalid file paths
+        raise
+
     # Build base data dict with required fields
     # embed='true' triggers automatic vector embedding after processing
     # async_processing='true' so the source add returns immediately
@@ -73,24 +84,17 @@ def _detect_and_prepare(content: str, title: str, notebook_id: str) -> tuple:
         "async_processing": "true",
     }
 
-    # Detect source type from content
+    # Detect source type from content (after file reading)
     lower_content = content.lower()
     if lower_content.startswith(("http://", "https://")):
         source_type = "link"
         request_data["type"] = "link"
         request_data["url"] = content
     else:
-        # Check if content looks like a file path with a known extension
-        import os
-        _, ext = os.path.splitext(content)
-        if ext.lower() in _FILE_EXTENSIONS:
-            source_type = "text"
-            request_data["type"] = "text"
-            request_data["content"] = content  # file path reference
-        else:
-            source_type = "text"
-            request_data["type"] = "text"
-            request_data["content"] = content  # raw text
+        # Treat as raw text content (or file content that was read)
+        source_type = "text"
+        request_data["type"] = "text"
+        request_data["content"] = content
 
     return source_type, request_data
 
@@ -305,8 +309,17 @@ class OpenNotebookSources(Tool):
                 break_loop=False,
             )
 
+        # Detect and read local file content if content looks like a file path
+        # This matches the pattern used in notes and podcasts tools
+        try:
+            content = prepare_content_for_backend(content.strip())
+        except ValueError as e:
+            return Response(
+                message=f"❌ **Error processing content:** {str(e)}",
+                break_loop=False
+            )
+
         # Auto-detect content type and prepare request data
-        content = content.strip()
         source_type, request_data = _detect_and_prepare(content, title, notebook_id)
 
         # Confirmation gate — show detected type and content preview before adding

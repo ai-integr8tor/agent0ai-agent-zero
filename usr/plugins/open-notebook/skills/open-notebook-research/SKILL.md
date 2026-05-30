@@ -46,6 +46,8 @@ Finds a specific source or note by name within a notebook. Uses fuzzy matching.
 3. `opennotebook_sources:read` → read full source content if needed
 4. `opennotebook_notes:create` → save findings as a note
 
+**Note:** If you add new sources during research using `opennotebook_sources:add`, it supports **local file auto-detection** (e.g., passing a path like `/path/to/report.pdf` will read and upload the content). See the main **open-notebook** skill for full details on supported file types.
+
 ## Cross-Tool Navigation
 
 - Want to explore a notebook? → `opennotebook_browse:notebook` for details

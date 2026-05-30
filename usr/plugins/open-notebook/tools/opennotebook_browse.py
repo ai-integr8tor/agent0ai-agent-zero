@@ -138,7 +138,14 @@ class OpenNotebookBrowse(Tool):
             from shared import resolve_notebook_id
             notebook_id = await resolve_notebook_id(self.agent, notebook_id)
         except ValueError as e:
-            return Response(message=f"❌ **{e}**", break_loop=False)
+            return Response(
+                message=(
+                    f"❌ **{e}**\n"
+                    "💡 **Hint:** Use `opennotebook_browse:notebooks` to see all available notebooks, "
+                    "or `opennotebook_manage:create` to create a new one."
+                ),
+                break_loop=False
+            )
         except Exception as e:
             api_url = config.get_api_url(self.agent)
             return Response(message=handle_error(e, f"{api_url}/api/notebooks"), break_loop=False)

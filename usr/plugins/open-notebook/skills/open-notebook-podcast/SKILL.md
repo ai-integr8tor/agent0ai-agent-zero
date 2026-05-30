@@ -24,6 +24,8 @@ Use when the user wants to create, check, or manage podcasts.
 
 This is a **multi-step async workflow**. The skill orchestrates the full lifecycle.
 
+**Content Sources:** Podcasts are generated from content within a specific notebook. If you have **local files** (PDF, DOCX, TXT, etc.) you want to use, add them to the notebook first using `opennotebook_sources:add` (which supports local file auto-detection). The podcast generator will then process those embedded sources.
+
 ### Step 1: Discover Profiles
 
 Before generating, discover available profiles:

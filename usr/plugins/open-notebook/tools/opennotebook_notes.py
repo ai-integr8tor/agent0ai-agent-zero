@@ -33,7 +33,7 @@ import config
 import client
 import errors
 sys.modules.pop('shared', None)
-from shared import format_date, format_status, get_asset_type, handle_error
+from shared import format_date, format_status, get_asset_type, handle_error, prepare_content_for_backend
 
 # Limits for display — prevents overwhelming output
 _MAX_NOTES = 20
@@ -59,7 +59,14 @@ class OpenNotebookNotes(Tool):
                     from shared import resolve_notebook_id
                     notebook_id = await resolve_notebook_id(self.agent, notebook_id)
                 except ValueError as e:
-                    return Response(message=f"❌ **{e}**", break_loop=False)
+                    return Response(
+                        message=(
+                            f"❌ **{e}**\n"
+                            "💡 **Hint:** Use `opennotebook_browse:notebooks` to see all available notebooks, "
+                            "or `opennotebook_manage:create` to create a new one."
+                        ),
+                        break_loop=False
+                    )
             return await self._list(notebook_id)
         elif method == "create":
             # Create a new note — requires notebook_id, content, optional title
@@ -70,7 +77,14 @@ class OpenNotebookNotes(Tool):
                     from shared import resolve_notebook_id
                     notebook_id = await resolve_notebook_id(self.agent, notebook_id)
                 except ValueError as e:
-                    return Response(message=f"❌ **{e}**", break_loop=False)
+                    return Response(
+                        message=(
+                            f"❌ **{e}**\n"
+                            "💡 **Hint:** Use `opennotebook_browse:notebooks` to see all available notebooks, "
+                            "or `opennotebook_manage:create` to create a new one."
+                        ),
+                        break_loop=False
+                    )
             title = kwargs.get("title", "")
             content = kwargs.get("content", "")
             return await self._create(notebook_id, title, content)
@@ -202,6 +216,15 @@ class OpenNotebookNotes(Tool):
                     "Example: `opennotebook_notes:create` with `notebook_id`, `content='My note text'`."
                 ),
                 break_loop=False,
+            )
+
+        # Detect and read file content if content looks like a local file path
+        try:
+            content = prepare_content_for_backend(content)
+        except ValueError as e:
+            return Response(
+                message=f"❌ **Error processing content:** {str(e)}",
+                break_loop=False
             )
 
         # Read-only mode prevents write operations
@@ -358,6 +381,16 @@ class OpenNotebookNotes(Tool):
                 ),
                 break_loop=False,
             )
+
+        # Detect and read file content if content looks like a local file path
+        if content:
+            try:
+                content = prepare_content_for_backend(content)
+            except ValueError as e:
+                return Response(
+                    message=f"❌ **Error processing content:** {str(e)}",
+                    break_loop=False
+                )
 
         # Build API request — PUT /api/notes/{note_id} with only changed fields
         api_url = config.get_api_url(self.agent)

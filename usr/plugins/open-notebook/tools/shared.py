@@ -11,6 +11,45 @@ except ImportError:
     httpx = None
 from errors import format_timeout, format_connection_error, format_http_error, format_unexpected
 
+# Known file extensions for auto-detection of file-type content
+_FILE_EXTENSIONS = {'.pdf', '.doc', '.docx', '.txt', '.md', '.rtf', '.odt', '.epub', '.html', '.htm', '.csv'}
+
+
+def prepare_content_for_backend(content: str) -> str:
+    """Detects if content is a local file path and reads it, otherwise returns content as-is.
+
+    Args:
+        content: The raw content string (file path or text).
+
+    Returns:
+        str: The actual text content to send to the backend.
+
+    Raises:
+        ValueError: If a file path is detected but cannot be read or doesn't exist.
+    """
+    if not content:
+        return content
+
+    import os
+    content_path = content.strip()
+    _, ext = os.path.splitext(content_path)
+
+    if ext.lower() in _FILE_EXTENSIONS:
+        if os.path.isfile(content_path):
+            try:
+                with open(content_path, 'r', encoding='utf-8', errors='replace') as f:
+                    return f.read()
+            except PermissionError:
+                raise ValueError(f"Permission denied reading file: {content_path}")
+            except UnicodeDecodeError as e:
+                raise ValueError(f"Cannot decode file content (may be binary): {content_path} - {str(e)}")
+            except Exception as e:
+                raise ValueError(f"Error reading file {content_path}: {str(e)}")
+        else:
+            raise ValueError(f"File not found: {content_path}")
+
+    return content_path
+
 
 def format_date(date_str: str) -> str:
     """Format ISO date string to 'YYYY-MM-DD HH:MM'."""

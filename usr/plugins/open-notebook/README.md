@@ -10,10 +10,24 @@ A knowledge management plugin that integrates [Open Notebook](https://github.com
 - Notebook-scoped workflows for browsing, adding, and querying content
 
 ### Sources
-- Import by **URL**, **text**, or **file upload**
+- Import by **URL**, **text**, or **local file path**
 - View processing status with colored badges
 - Retry failed source processing
 - Delete sources from the panel
+
+#### Supported Local File Types
+When using the `opennotebook_sources:add` tool, local files with the following extensions are automatically detected, read, and uploaded as text:
+
+| Category | Extensions |
+|----------|------------|
+| Documents | `.pdf`, `.doc`, `.docx`, `.odt`, `.rtf`, `.epub` |
+| Text & Web | `.txt`, `.md`, `.html`, `.htm` |
+| Data | `.csv` |
+
+**Behavior:**
+- Content is read from the local filesystem and uploaded to the Open Notebook backend.
+- The title defaults to the filename if one is not provided.
+- Errors (e.g., permission denied, file not found) return actionable guidance.
 
 ### AI Chat
 - **Notebook chat** — session-based conversations scoped to a notebook

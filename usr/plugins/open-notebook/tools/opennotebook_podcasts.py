@@ -22,7 +22,7 @@ import config
 import client
 import errors
 sys.modules.pop('shared', None)
-from shared import format_date, format_status, get_asset_type, handle_error
+from shared import format_date, format_status, get_asset_type, handle_error, prepare_content_for_backend
 
 # Limits
 _MAX_EPISODES = 20
@@ -245,6 +245,16 @@ class OpenNotebookPodcasts(Tool):
                 message="⚠️ Plugin is in read-only mode. Cannot generate podcasts.",
                 break_loop=False,
             )
+
+        # Detect and read file content if content looks like a local file path
+        if content:
+            try:
+                content = prepare_content_for_backend(content)
+            except ValueError as e:
+                return Response(
+                    message=f"❌ **Error processing content:** {str(e)}",
+                    break_loop=False
+                )
 
         # Confirmation check
         if config.needs_confirmation(self.agent) and not confirmed:

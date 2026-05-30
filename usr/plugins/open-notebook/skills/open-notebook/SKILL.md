@@ -49,17 +49,23 @@ Use when the user mentions Open Notebook, knowledge base, notebooks, sources, or
 
 ### Add Content (Updated Workflow)
 1. If the user names a notebook, use that notebook first; otherwise use `opennotebook_browse:notebooks` to pick a notebook by name or ID
-2. `opennotebook_sources:add` → add content. The tool supports parameter aliases:
+2. **Prepare Content**:
+   - If the user provides a **URL** starting with `http://` or `https://`, pass it directly to the tool.
+   - If the user provides a **local file path** (e.g., `/a0/usr/workdir/file.txt`, `document.pdf`), pass the path directly to the tool:
+     - The tool **automatically detects** and **reads local files** with known extensions (.pdf, .doc, .docx, .txt, .md, .rtf, .odt, .epub, .html, .htm, .csv)
+     - The file content is extracted and sent to the backend, not the file path itself
+     - This is consistent across all tools: `opennotebook_sources:add`, `opennotebook_notes:create`, `opennotebook_notes:update`, and `opennotebook_podcasts:generate`
+   - If the file path is invalid or the file doesn't exist, the tool returns a user-friendly error message.
+3. `opennotebook_sources:add` → add content. The tool supports parameter aliases:
    - Use `notebook` OR `notebook_id`
    - Use `url` OR `content` (for URLs)
    - Use `source` OR `source_id` (for lookups)
-3. **Auto-Detection**: The tool automatically detects content type:
-   - URLs starting with `http://` or `https://` → `link`
-   - File paths with known extensions → `text` (file upload)
-   - Everything else → `text`
-4. **Confirmation Gate**: If enabled, the tool shows the detected type and preview. Retry using the exact confirmation format requested (handle both boolean and string confirmations).
-5. **Async Processing**: Content is added immediately. Insight generation happens asynchronously (non-blocking), so you don't need to wait 3-4 minutes anymore.
-6. `opennotebook_sources:list` → verify content was added
+4. **Tool Behavior**:
+   - The tool detects if content is a URL (type `link`) or raw text (type `text`).
+   - **Local file paths are automatically detected and read** - no manual file reading required.
+5. **Confirmation Gate**: If enabled, the tool shows the detected type and preview. Retry using the exact confirmation format requested (handle both boolean and string confirmations).
+6. **Async Processing**: Content is added immediately. Insight generation happens asynchronously (non-blocking), so you don't need to wait 3-4 minutes anymore.
+7. `opennotebook_sources:list` → verify content was added
 
 ### Create a Podcast
 1. Use the **open-notebook-podcast** skill for the full async workflow
