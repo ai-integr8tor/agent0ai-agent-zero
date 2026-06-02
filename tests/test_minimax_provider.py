@@ -158,22 +158,16 @@ class TestMiniMaxTemperatureClamping:
         result = _adjust_call_args_temp_logic("MiniMax-M2.7", {})
         assert "temperature" not in result
 
+    def test_clamping_by_model_name_m3(self):
+        """The default M3 model should still have temperature clamping."""
+        result = _adjust_call_args_temp_logic(
+            "MiniMax-M3", {"temperature": 0.0}
+        )
+        assert result["temperature"] > 0.0
+
     def test_clamping_by_model_name_m27_highspeed(self):
         result = _adjust_call_args_temp_logic(
             "MiniMax-M2.7-highspeed", {"temperature": 0.0}
-        )
-        assert result["temperature"] > 0.0
-
-    def test_clamping_by_model_name_m25(self):
-        """Older M2.5 model should still have temperature clamping."""
-        result = _adjust_call_args_temp_logic(
-            "MiniMax-M2.5", {"temperature": 0.0}
-        )
-        assert result["temperature"] > 0.0
-
-    def test_clamping_by_model_name_m25_highspeed(self):
-        result = _adjust_call_args_temp_logic(
-            "MiniMax-M2.5-highspeed", {"temperature": 0.0}
         )
         assert result["temperature"] > 0.0
 
