@@ -1,2 +1,4 @@
-voice: am_puck,am_onyx
+voice: am_onyx+am_echo
 speed: 1.1
+remote_url: http://ares.moon-dragon.us:18890
+response_format: mp3
