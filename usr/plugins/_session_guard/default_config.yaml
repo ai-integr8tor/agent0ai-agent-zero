@@ -1,0 +1,66 @@
+# Session Guard Configuration
+# Prevents long-running processes in session 0 by auto-redirecting to higher sessions
+
+enabled: true
+
+# Enforcement mode:
+# - warn: Log warnings but allow execution (default for tuning)
+# - redirect: Automatically redirect to next available session
+# - block: Prevent execution entirely
+enforcement_mode: warn
+
+# Risk scoring thresholds
+max_session0_code_length: 5000
+max_session0_lines: 6
+session0_max_runtime_seconds: 60
+
+# High-risk patterns that should never run in session 0
+high_risk_patterns:
+  - kg_pipeline
+  - elastic_ingest
+  - knowledge_ingest
+  - orphan_kg_ingest
+  - distill
+  - bulk
+  - batch
+  - while[[:space:]]+True
+  - sleep[[:space:]]+\d{3,}
+  - benchmark
+  - long_running
+  - multi.*file.*process
+  - for.*in.*range
+  - asyncio.*gather
+  - concurrent.*process
+
+# Safe patterns that can always run in session 0
+safe_patterns:
+  - ^\s*(ls|ll|la)\s+
+  - ^\s*(grep|cat|head|tail|less|more)\s+
+  - ^\s*(ps|ss|netstat|lsof)\s+
+  - ^\s*(curl|wget)\s+-\w+\s+
+  - ^\s*docker\s+(ps|images|info|version)\s*
+  - ^\s*(whoami|pwd|echo|printenv|env)\s*
+  - ^\s*cd\s+
+  - ^\s*date\s*
+  - ^\s*uname\s*
+  - ^\s*hostname\s*
+  - ^\s*which\s+
+  - ^\s*find\s+\S+\s+-name
+  - ^\s*(stat|file)\s+
+  - ^\s*git\s+(status|log|diff|show)\s*
+  - ^\s*python3?\s+-c\s+["\']\s*import\s+(os|sys|json|re|datetime)\s*;\s*(print|sys\.stderr\.
+
+# Redirect target session (auto = find first available >= 1)
+redirect_session: auto
+
+# Logging
+log_file: /a0/usr/workdir/logs/session_guard.log
+log_level: info  # debug, info, warning, error
+
+# Initial tuning period (1 week)
+# After validation, switch to redirect mode
+tuning_period_days: 7
+
+# Statistics tracking
+stats_enabled: true
+stats_file: /a0/usr/workdir/logs/session_guard_stats.json

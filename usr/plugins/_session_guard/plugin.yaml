@@ -1,0 +1,8 @@
+name: _session_guard
+title: Session Guard
+description: Prevents long-running processes in session 0 by auto-redirecting to higher sessions. Protects main agent from container lockups.
+version: 1.0.0
+always_enabled: true
+settings_sections: []
+per_project_config: false
+per_agent_config: false
