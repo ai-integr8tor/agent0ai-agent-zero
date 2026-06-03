@@ -1,0 +1,64 @@
+enabled: true
+skill_path: /a0/skills/a0-development/SKILL.md
+audit_on_startup: true
+scan_paths:
+  hook_points: /a0/extensions/python/
+  core_plugins: /a0/plugins/
+  core_tools: /a0/tools/
+  api_endpoints: /a0/api/
+  agent_profiles: /a0/agents/
+  user_plugins: /a0/usr/plugins/
+  user_skills: /a0/usr/skills/
+
+# Log configuration
+log_file: /a0/usr/workdir/logs/dev_skill_guard.log
+audit_file: /a0/usr/workdir/logs/dev_skill_guard_audit.json
+
+# Skill documentation sections to validate
+skill_sections:
+  hook_points_table:
+    - agent_init
+    - system_prompt
+    - monologue_start
+    - message_loop_start
+    - message_loop_prompts_before
+    - message_loop_prompts_after
+    - before_main_llm_call
+    - util_model_call_before
+    - response_stream
+    - response_stream_chunk
+    - response_stream_end
+    - reasoning_stream
+    - reasoning_stream_chunk
+    - reasoning_stream_end
+    - tool_execute_before
+    - tool_execute_after
+    - hist_add_before
+    - hist_add_tool_result
+    - message_loop_end
+    - monologue_end
+    - process_chain_end
+    - job_loop
+    - error_format
+    - startup_migration
+    - banners
+    - embedding_model_changed
+    - user_message_ui
+    - webui_ws_connect
+    - webui_ws_disconnect
+    - webui_ws_event
+  core_plugins:
+    - _code_execution
+    - _memory
+    - _text_editor
+    - _model_config
+    - _browser
+    - _infection_check
+    - _error_retry
+    - _email_integration
+    - _telegram_integration
+    - _chat_branching
+    - _promptinclude
+    - _plugin_installer
+    - _plugin_scan
+    - _plugin_validator

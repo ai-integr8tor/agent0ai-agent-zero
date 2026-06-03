@@ -1,0 +1,4 @@
+name: _dev_skill_guard
+version: 1.0.0
+description: Validates and keeps a0-development skill documentation synchronized with the actual framework
+always_enabled: true
