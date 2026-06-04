@@ -50,6 +50,24 @@
     └── my_helper.py
 ```
 
+## Extension Filename Uniqueness (MANDATORY)
+
+**ALL extension files MUST have UNIQUE filenames across the ENTIRE framework.**
+
+The framework (`/a0/helpers/extension.py` → `_get_extension_classes()`) deduplicates extensions by **filename only**. If two plugins have extensions with the same filename, only the **first** is kept — all others are **silently dropped** with no warning.
+
+```
+❌ WRONG: _10_force_subagent.py          (same name = deduplication collision)
+✅ RIGHT: _10_force_subagent__plugin_name.py  (unique per plugin)
+```
+
+**Pattern:** `_<priority>_<descriptive_name>__<plugin_name>.py`
+
+Before creating ANY extension:
+1. `find /a0/ -path '*/<hook_point>/<your_filename>' -not -path '*__pycache__*'`
+2. If ANY other plugin has the same filename, RENAME YOURS
+3. Test with ACTUAL tool calls, not just file existence checks
+
 ## Enforcement
 
 Before implementing ANY new feature, ask:
