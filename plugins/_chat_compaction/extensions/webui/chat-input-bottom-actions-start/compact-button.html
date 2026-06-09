@@ -131,11 +131,14 @@
     }
     
     .cmpct-dialog {
-      background: var(--color-panel, #1a1a1a);
+      background: var(--color-panel, var(--color-background));
       border-radius: 12px;
       box-shadow: 0 4px 23px rgba(0, 0, 0, 0.3);
       width: 90%;
       max-width: 560px;
+      max-height: 85dvh;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
     
@@ -144,14 +147,15 @@
       align-items: center;
       justify-content: space-between;
       padding: 16px 20px;
-      border-bottom: 1px solid var(--color-border, #333);
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
     }
     
     .cmpct-header h3 {
       margin: 0;
       font-size: 1.1rem;
       font-weight: 600;
-      color: var(--color-text, #e5e5e5);
+      color: var(--color-text);
     }
     
     .cmpct-close {
@@ -160,21 +164,24 @@
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
-      color: var(--color-text-secondary, #999);
+      color: var(--color-text-secondary);
       transition: color 0.2s;
     }
     
     .cmpct-close:hover {
-      color: var(--color-text, #e5e5e5);
+      color: var(--color-text);
     }
     
     .cmpct-body {
       padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
     }
     
     .cmpct-desc {
       margin: 0 0 16px 0;
-      color: var(--color-text-secondary, #999);
+      color: var(--color-text-secondary);
       font-size: 0.9rem;
     }
     
@@ -190,13 +197,13 @@
       flex-direction: column;
       align-items: center;
       padding: 12px 8px;
-      background: var(--color-background-muted, #252525);
+      background: var(--color-background-muted);
       border-radius: 8px;
     }
     
     .cmpct-stat-label {
       font-size: 0.7rem;
-      color: var(--color-text-secondary, #999);
+      color: var(--color-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 4px;
@@ -205,7 +212,7 @@
     .cmpct-stat-value {
       font-size: 1.1rem;
       font-weight: 600;
-      color: var(--color-text, #e5e5e5);
+      color: var(--color-text);
     }
     
     /* Model selection section */
@@ -215,7 +222,7 @@
 
     .cmpct-model-label {
       font-size: 0.7rem;
-      color: var(--color-text-secondary, #999);
+      color: var(--color-text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 8px;
@@ -232,22 +239,22 @@
       min-width: 0;
       padding: 6px 10px;
       border-radius: 6px;
-      border: 1px solid var(--color-border, #333);
-      background: var(--color-background-muted, #252525);
-      color: var(--color-text, #e5e5e5);
+      border: 1px solid var(--color-border);
+      background: var(--color-background-muted);
+      color: var(--color-text);
       font-size: 0.85rem;
       cursor: pointer;
     }
 
     .cmpct-select:focus {
       outline: none;
-      border-color: var(--color-primary, #3b82f6);
+      border-color: var(--color-primary);
     }
 
     .cmpct-toggle {
       display: flex;
       border-radius: 6px;
-      border: 1px solid var(--color-border, #333);
+      border: 1px solid var(--color-border);
       overflow: hidden;
       flex-shrink: 0;
     }
@@ -255,8 +262,8 @@
     .cmpct-toggle button {
       padding: 6px 14px;
       border: none;
-      background: var(--color-background-muted, #252525);
-      color: var(--color-text-secondary, #999);
+      background: var(--color-background-muted);
+      color: var(--color-text-secondary);
       font-size: 0.8rem;
       font-weight: 500;
       cursor: pointer;
@@ -264,21 +271,21 @@
     }
 
     .cmpct-toggle button:first-child {
-      border-right: 1px solid var(--color-border, #333);
+      border-right: 1px solid var(--color-border);
     }
 
     .cmpct-toggle button.active {
-      background: var(--color-primary, #3b82f6);
-      color: white;
+      background: color-mix(in srgb, var(--color-primary) 18%, var(--color-background-muted));
+      color: var(--color-primary);
     }
 
     .cmpct-toggle button:hover:not(.active) {
-      background: var(--color-background-hover, #444);
+      background: var(--color-background-hover);
     }
 
     .cmpct-model-name {
       font-size: 0.85rem;
-      color: var(--color-text, #e5e5e5);
+      color: var(--color-text);
       opacity: 0.7;
       white-space: nowrap;
       overflow: hidden;
@@ -290,10 +297,10 @@
       align-items: flex-start;
       gap: 8px;
       padding: 10px 12px;
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.25);
+      background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--color-primary) 26%, var(--color-border));
       border-radius: 8px;
-      color: #4ade80;
+      color: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
       font-size: 0.8rem;
     }
     
@@ -308,7 +315,7 @@
       justify-content: center;
       gap: 8px;
       padding: 30px;
-      color: var(--color-text-secondary, #999);
+      color: var(--color-text-secondary);
     }
     
     .cmpct-footer {
@@ -316,7 +323,8 @@
       justify-content: flex-end;
       gap: 8px;
       padding: 12px 20px;
-      border-top: 1px solid var(--color-border, #333);
+      border-top: 1px solid var(--color-border);
+      flex-shrink: 0;
     }
     
     .cmpct-btn {
@@ -338,21 +346,22 @@
     }
     
     .cmpct-btn-cancel {
-      background: var(--color-background-muted, #333);
-      color: var(--color-text, #e5e5e5);
+      background: var(--color-background-muted);
+      color: var(--color-text);
     }
     
     .cmpct-btn-cancel:hover:not(:disabled) {
-      background: var(--color-background-hover, #444);
+      background: var(--color-background-hover);
     }
     
     .cmpct-btn-danger {
-      background: #dc2626;
-      color: white;
+      background: color-mix(in srgb, var(--color-error, #dc2626) 16%, var(--color-background-muted));
+      border: 1px solid color-mix(in srgb, var(--color-error, #dc2626) 36%, var(--color-border));
+      color: var(--color-error, #dc2626);
     }
     
     .cmpct-btn-danger:hover:not(:disabled) {
-      background: #b91c1c;
+      background: color-mix(in srgb, var(--color-error, #dc2626) 24%, var(--color-background-hover));
     }
     
     .cmpct-spinner {

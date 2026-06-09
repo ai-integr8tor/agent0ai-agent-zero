@@ -31,16 +31,20 @@ class TelegramBotManager(Extension):
             get_all_bots,
             create_bot,
             cache_bot_info,
+            set_bot_commands,
             start_polling,
             setup_webhook,
             stop_bot,
+            _make_handler,
         )
         from plugins._telegram_integration.helpers.handler import (
             handle_start,
             handle_clear,
+            handle_new_chat,
             handle_message,
             handle_callback_query,
             handle_new_members,
+            handle_forum_topic_closed,
             cleanup_old_attachments,
         )
 
@@ -74,9 +78,11 @@ class TelegramBotManager(Extension):
                 # Create handler closures that capture bot_name and config
                 _on_start = partial(_make_handler(handle_start), bot_name=name, bot_cfg=bot_cfg)
                 _on_clear = partial(_make_handler(handle_clear), bot_name=name, bot_cfg=bot_cfg)
+                _on_new_chat = partial(_make_handler(handle_new_chat), bot_name=name, bot_cfg=bot_cfg)
                 _on_message = partial(_make_handler(handle_message), bot_name=name, bot_cfg=bot_cfg)
                 _on_callback = partial(_make_handler(handle_callback_query), bot_name=name, bot_cfg=bot_cfg)
                 _on_new_members = partial(_make_handler(handle_new_members), bot_name=name, bot_cfg=bot_cfg)
+                _on_forum_topic_closed = partial(_make_handler(handle_forum_topic_closed), bot_name=name, bot_cfg=bot_cfg)
 
                 instance = create_bot(
                     name=name,
@@ -84,13 +90,16 @@ class TelegramBotManager(Extension):
                     on_message=_on_message,
                     on_command_start=_on_start,
                     on_command_clear=_on_clear,
+                    on_command_new=_on_new_chat,
                     on_command_control=_on_message,
                     on_callback_query=_on_callback,
                     on_new_members=_on_new_members,
+                    on_forum_topic_closed=_on_forum_topic_closed,
                     group_mode=bot_cfg.get("group_mode", "mention"),
                 )
 
                 await cache_bot_info(instance)
+                await set_bot_commands(instance)
 
                 mode = bot_cfg.get("mode", "polling")
                 if mode == "webhook":
@@ -112,20 +121,3 @@ class TelegramBotManager(Extension):
                 PrintStyle.error(
                     f"Telegram ({name}): failed to start: {format_error(e)}"
                 )
-
-# Wrapper functions for aiogram handlers
-
-def _get_current_bot_cfg(bot_name: str) -> dict:
-    """Fetch the latest bot config by name, so handlers always use fresh settings."""
-    config = plugins.get_plugin_config(PLUGIN_NAME) or {}
-    for b in config.get("bots", []):
-        if b.get("name") == bot_name:
-            return b
-    return {}
-
-
-def _make_handler(handler_fn):
-    """Create a wrapper that resolves fresh bot config on every call."""
-    async def _wrapped(event, bot_name: str, bot_cfg: dict):
-        await handler_fn(event, bot_name, _get_current_bot_cfg(bot_name) or bot_cfg)
-    return _wrapped
