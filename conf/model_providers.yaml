@@ -83,6 +83,20 @@ chat:
     models_list:
       endpoint_url: "/v1/models"
       default_base: "http://host.docker.internal:1234"
+  minimax:
+    name: MiniMax
+    litellm_provider: openai
+    kwargs:
+      api_base: https://api.minimax.io/v1
+    models_list:
+      endpoint_url: "https://api.minimax.io/v1/models"
+  minimax-cn:
+    name: MiniMax China
+    litellm_provider: openai
+    kwargs:
+      api_base: https://api.minimaxi.com/v1
+    models_list:
+      endpoint_url: "https://api.minimaxi.com/v1/models"
   mistral:
     name: Mistral AI
     litellm_provider: mistral

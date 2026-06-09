@@ -775,6 +775,21 @@ def _adjust_call_args(provider_name: str, model_name: str, kwargs: dict):
     if provider_name == "other":
         provider_name = "openai"
 
+    # MiniMax requires temperature in (0.0, 1.0]; clamp if a caller passes
+    # the LiteLLM/OpenAI-default of 0.7 it works fine, but Agent Zero's
+    # task templates sometimes pass 0 (deterministic) or values above 1
+    # which the MiniMax API rejects with a 400. Detect via provider name
+    # OR api_base to also catch the user-supplied "openai" provider that
+    # was repointed at MiniMax's endpoint via api_base override.
+    if provider_name in ("minimax", "minimax-cn") or "minimax" in (kwargs.get("api_base") or "") or "minimax" in model_name.lower():
+        temp = kwargs.get("temperature")
+        if temp is not None:
+            temp = float(temp)
+            if temp <= 0.0:
+                kwargs["temperature"] = 0.01
+            elif temp > 1.0:
+                kwargs["temperature"] = 1.0
+
     return provider_name, model_name, kwargs
 
 
