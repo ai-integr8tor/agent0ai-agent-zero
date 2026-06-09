@@ -47,8 +47,15 @@ const model = {
   },
 
   // Combined items for display: confirmed first, then pending at the end
+  // Deduplicate by id to prevent Alpine "Duplicate key" errors during
+  // the race between server poll updates and pending item cleanup.
   get allItems() {
-    return [...this.items, ...this.pendingItems];
+    const seen = new Set();
+    return [...this.items, ...this.pendingItems].filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
   },
 
   async addToQueue(text, attachments = []) {

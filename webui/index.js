@@ -316,6 +316,13 @@ export async function applySnapshot(snapshot, options = {}) {
     return { updated: false };
   }
 
+  // Update chats/tasks list BEFORE context check so background chat
+  // state changes (running, etc.) are always reflected in the sidebar.
+  let contexts = snapshot.contexts || [];
+  chatsStore.applyContexts(contexts);
+  let tasks = snapshot.tasks || [];
+  tasksStore.applyTasks(tasks);
+
   if (
     snapshot.context != context &&
     context !== null
@@ -371,14 +378,6 @@ export async function applySnapshot(snapshot, options = {}) {
   if (touchConnectionStatus) {
     setConnectionStatus(true);
   }
-
-  // Update chats list using store
-  let contexts = snapshot.contexts || [];
-  chatsStore.applyContexts(contexts);
-
-  // Update tasks list using store
-  let tasks = snapshot.tasks || [];
-  tasksStore.applyTasks(tasks);
 
   // Make sure the active context is properly selected in both lists
   if (context) {
