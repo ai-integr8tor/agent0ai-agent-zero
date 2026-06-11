@@ -556,6 +556,50 @@ class DynamicA2AProxy:
         with self._lock:
             app = self.app
         if app:
+            # Pre-validate POST request bodies before reaching fasta2a.
+            # fasta2a raises pydantic.ValidationError for malformed JSON-RPC payloads,
+            # but starlette's inner middleware sends a 500 first and then re-raises,
+            # making it impossible to intercept post-hoc. Validate here instead.
+            if scope.get('type') == 'http' and scope.get('method', '').upper() == 'POST':
+                import json as _json
+                # Drain body from current receive (may already be project-injected wrapper)
+                body_chunks = []
+                cur_receive = receive
+                while True:
+                    msg = await cur_receive()
+                    body_chunks.append(msg.get('body', b''))
+                    if not msg.get('more_body', False):
+                        break
+                body = b''.join(body_chunks)
+                error_msg = None
+                try:
+                    data = _json.loads(body) if body else {}
+                    if not isinstance(data, dict):
+                        error_msg = "Expected JSON object, not array or other type"
+                    elif 'method' not in data:
+                        error_msg = "Missing required field 'method'"
+                except ValueError as parse_err:
+                    error_msg = f"Invalid JSON: {parse_err}"
+                if error_msg:
+                    _PRINTER.print(f"[A2A] Malformed request rejected (400): {error_msg}")
+                    err_body = _json.dumps({
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32600, "message": "Invalid Request", "data": error_msg},
+                        "id": None
+                    }).encode()
+                    await send({'type': 'http.response.start', 'status': 400,
+                                'headers': [[b'content-type', b'application/json']]})
+                    await send({'type': 'http.response.body', 'body': err_body})
+                    return
+                # Reconstruct receive to replay the buffered (possibly project-injected) body
+                _body_replayed = False
+                async def _replay_receive():
+                    nonlocal _body_replayed
+                    if not _body_replayed:
+                        _body_replayed = True
+                        return {'type': 'http.request', 'body': body, 'more_body': False}
+                    return {'type': 'http.disconnect'}
+                receive = _replay_receive
             await app(scope, receive, send)
         else:
             # App not configured, return 503
