@@ -262,7 +262,7 @@ class BackupService:
         processed_count = 0
 
         try:
-            spec = PathSpec.from_lines("gitwildmatch", pattern_lines)
+            spec = PathSpec.from_lines("gitignore", pattern_lines)
 
             # Walk through base directories
             for base_pattern_path, base_real_path in self.base_paths.items():
@@ -511,7 +511,7 @@ class BackupService:
 
                     if pattern_lines:
                         from pathspec import PathSpec
-                        restore_spec = PathSpec.from_lines("gitwildmatch", pattern_lines)
+                        restore_spec = PathSpec.from_lines("gitignore", pattern_lines)
 
                 # Process each file in archive
                 for archive_path in archive_files:
@@ -667,7 +667,7 @@ class BackupService:
 
                     if pattern_lines:
                         from pathspec import PathSpec
-                        restore_spec = PathSpec.from_lines("gitwildmatch", pattern_lines)
+                        restore_spec = PathSpec.from_lines("gitignore", pattern_lines)
 
                 # Process each file in archive
                 for archive_path in archive_files:
