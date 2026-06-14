@@ -7,7 +7,7 @@ enabled: true
 # - warn: Log warnings but allow execution (default for tuning)
 # - redirect: Automatically redirect to next available session
 # - block: Prevent execution entirely
-enforcement_mode: warn
+enforcement_mode: redirect
 
 # Risk scoring thresholds
 max_session0_code_length: 5000
@@ -49,6 +49,12 @@ safe_patterns:
   - ^\s*(stat|file)\s+
   - ^\s*git\s+(status|log|diff|show)\s*
   - ^\s*python3?\s+-c\s+["\']\s*import\s+(os|sys|json|re|datetime)\s*;\s*(print|sys\.stderr\.
+
+# Circuit breaker: fallback to warn if redirect fails repeatedly
+circuit_breaker:
+  max_redirect_failures: 3
+  fallback: warn
+  cooldown_seconds: 300
 
 # Redirect target session (auto = find first available >= 1)
 redirect_session: auto

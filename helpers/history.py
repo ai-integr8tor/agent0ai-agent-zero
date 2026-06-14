@@ -227,15 +227,98 @@ class Topic(Record):
         self.messages[1 : cnt_to_sum + 1] = [sum_msg]
         return True
 
-    async def summarize_messages(self, messages: list[Message]):
-        msg_txt = [m.output_text() for m in messages]
-        summary = await self.history.agent.call_utility_model(
+    async def summarize_messages(self, messages: list[Message]) -> str:
+        """Summarize messages with token-aware chunking for small context models.
+
+        Splits messages into chunks of ~3500 tokens, summarizes each chunk,
+        then combines chunk summaries into a final summary. Handles edge cases
+        for empty lists, single messages, and oversized messages.
+        """
+        CHUNK_TARGET_TOKENS = 3500
+        COMBINE_THRESHOLD = 3000
+
+        if not messages:
+            return ""
+
+        if len(messages) == 1:
+            return await self._summarize_chunk([messages[0].output_text()])
+
+        chunks = self._group_into_chunks(messages, CHUNK_TARGET_TOKENS)
+
+        if len(chunks) == 1:
+            return await self._summarize_chunk(chunks[0])
+
+        # Summarize chunks sequentially to avoid overloading the utility model
+        chunk_summaries: list[str] = []
+        for chunk in chunks:
+            try:
+                summary = await self._summarize_chunk(chunk)
+                chunk_summaries.append(summary if summary and summary.strip() else "...")
+            except Exception:
+                # Fallback: truncate the chunk text
+                combined = "\n".join(chunk)
+                words = combined.split()
+                chunk_summaries.append(" ".join(words[:100]) + ("..." if len(words) > 100 else ""))
+
+        return await self._combine_summaries(chunk_summaries, COMBINE_THRESHOLD)
+
+    def _group_into_chunks(
+        self, messages: list[Message], target_tokens: int
+    ) -> list[list[str]]:
+        """Group messages into chunks that stay within target_tokens."""
+        chunks: list[list[str]] = []
+        current_chunk: list[str] = []
+        current_tokens = 0
+
+        for msg in messages:
+            text = msg.output_text()
+            msg_tokens = msg.get_tokens()
+
+            if msg_tokens > target_tokens:
+                # Oversized message gets its own chunk
+                if current_chunk:
+                    chunks.append(current_chunk)
+                chunks.append([text])
+                current_chunk = []
+                current_tokens = 0
+            elif current_tokens + msg_tokens > target_tokens and current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = [text]
+                current_tokens = msg_tokens
+            else:
+                current_chunk.append(text)
+                current_tokens += msg_tokens
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    async def _summarize_chunk(self, chunk: list[str]) -> str:
+        """Summarize a single chunk of message texts."""
+        return await self.history.agent.call_utility_model(
             system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
             message=self.history.agent.read_prompt(
-                "fw.topic_summary.msg.md", content=msg_txt
+                "fw.topic_summary.msg.md", content=chunk
             ),
         )
-        return summary
+
+    async def _combine_summaries(
+        self, summaries: list[str], threshold: int
+    ) -> str:
+        """Combine chunk summaries into a final summary."""
+        valid = [s for s in summaries if s and s.strip()]
+        if not valid:
+            return "Summary unavailable."
+        if len(valid) == 1:
+            return valid[0]
+
+        combined = "\n".join([f"Part {i+1}: {s}" for i, s in enumerate(valid)])
+        combined_tokens = tokens.approximate_tokens(combined)
+
+        if combined_tokens > threshold:
+            return await self._summarize_chunk([combined])
+        return " ".join(valid)
 
     def to_dict(self):
         return {
@@ -279,12 +362,100 @@ class Bulk(Record):
         return False
 
     async def summarize(self):
-        self.summary = await self.history.agent.call_utility_model(
-            system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
-            message=self.history.agent.read_prompt(
-                "fw.topic_summary.msg.md", content=self.output_text()
-            ),
-        )
+        """Summarize records with token-aware chunking for small context models.
+        
+        Splits record text into chunks of ~3500 tokens, summarizes each chunk,
+        then combines chunk summaries into a final summary.
+        """
+        CHUNK_TARGET_TOKENS = 3500
+        COMBINE_THRESHOLD = 3000
+        
+        # Extract text from all records
+        texts = []
+        total_tokens = 0
+        for record in self.records:
+            text = record.output_text()
+            record_tokens = tokens.approximate_tokens(text)
+            texts.append((text, record_tokens))
+            total_tokens += record_tokens
+        
+        if not texts:
+            self.summary = ""
+            return self.summary
+        
+        # Single chunk case - summarize directly
+        if total_tokens <= CHUNK_TARGET_TOKENS:
+            self.summary = await self.history.agent.call_utility_model(
+                system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
+                message=self.history.agent.read_prompt(
+                    "fw.topic_summary.msg.md", content=self.output_text()
+                ),
+            )
+            return self.summary
+        
+        # Multi-chunk case - chunk and summarize
+        chunks: list[list[str]] = []
+        current_chunk: list[str] = []
+        current_tokens = 0
+        
+        for text, record_tokens in texts:
+            if record_tokens > CHUNK_TARGET_TOKENS:
+                # Oversized record gets its own chunk
+                if current_chunk:
+                    chunks.append(current_chunk)
+                chunks.append([text])
+                current_chunk = []
+                current_tokens = 0
+            elif current_tokens + record_tokens > CHUNK_TARGET_TOKENS and current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = [text]
+                current_tokens = record_tokens
+            else:
+                current_chunk.append(text)
+                current_tokens += record_tokens
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        # Summarize chunks sequentially
+        chunk_summaries: list[str] = []
+        for chunk in chunks:
+            try:
+                combined = "\n".join(chunk)
+                summary = await self.history.agent.call_utility_model(
+                    system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
+                    message=self.history.agent.read_prompt(
+                        "fw.topic_summary.msg.md", content=combined
+                    ),
+                )
+                chunk_summaries.append(summary if summary and summary.strip() else "...")
+            except Exception:
+                # Fallback: truncate the chunk
+                combined = "\n".join(chunk)
+                words = combined.split()
+                chunk_summaries.append(" ".join(words[:100]) + ("..." if len(words) > 100 else ""))
+        
+        # Combine summaries
+        valid = [s for s in chunk_summaries if s and s.strip()]
+        if not valid:
+            self.summary = "Summary unavailable."
+            return self.summary
+        if len(valid) == 1:
+            self.summary = valid[0]
+            return self.summary
+        
+        combined = "\n".join([f"Part {i+1}: {s}" for i, s in enumerate(valid)])
+        combined_tokens = tokens.approximate_tokens(combined)
+        
+        if combined_tokens > COMBINE_THRESHOLD:
+            self.summary = await self.history.agent.call_utility_model(
+                system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
+                message=self.history.agent.read_prompt(
+                    "fw.topic_summary.msg.md", content=combined
+                ),
+            )
+            return self.summary
+        self.summary = " ".join(valid)
         return self.summary
 
     def to_dict(self):

@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import traceback
 from datetime import datetime
 from typing import Any
@@ -38,6 +39,11 @@ from helpers.print_style import PrintStyle
 class SessionGuard(Extension):
     """Intercepts code_execution_tool calls and protects session 0."""
 
+
+    def __init__(self, agent=None, **kwargs):
+        super().__init__(agent=agent, **kwargs)
+        self._cb_failures = 0
+        self._cb_fallback_until = 0  # unix timestamp; 0 = active
     # ── Configuration ───────────────────────────────────────────────
 
     def _get_config(self) -> dict:
@@ -289,10 +295,38 @@ class SessionGuard(Extension):
             )
 
         if mode == 'redirect' and score >= 30:
+            # Circuit breaker: check if in cooldown
+            cb = config.get('circuit_breaker', {})
+            cb_max = cb.get('max_redirect_failures', 3)
+            cb_cooldown = cb.get('cooldown_seconds', 300)
+
+            if self._cb_fallback_until and time.time() < self._cb_fallback_until:
+                # In cooldown - fall back to warn
+                self._log_intervention(tool_args, score, reasons, 'warned_cb_fallback', config)
+                self._update_stats('warned', config)
+                return
+
+            # Reset if cooldown expired
+            if self._cb_fallback_until and time.time() >= self._cb_fallback_until:
+                self._cb_failures = 0
+                self._cb_fallback_until = 0
+
             # Redirect to higher session
             new_session = self._find_next_session(tool_args.get('session', 0))
             old_session = tool_args.get('session', 0)
+
+            if new_session == old_session:
+                # No available session - increment failure counter
+                self._cb_failures += 1
+                if self._cb_failures >= cb_max:
+                    self._cb_fallback_until = time.time() + cb_cooldown
+                    self._log_intervention(tool_args, score, reasons, 'cb_triggered', config)
+                self._log_intervention(tool_args, score, reasons, 'warned', config)
+                self._update_stats('warned', config)
+                return
+
             tool_args['session'] = new_session
+            self._cb_failures = 0  # Reset on successful redirect
             self._log_intervention(tool_args, score, reasons, 'redirected', config)
             self._update_stats('redirected', config)
 

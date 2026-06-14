@@ -353,3 +353,7 @@ Run `audit` to perform a fresh scan."""
                 message=f"Unknown method: {method}. Available: audit, status, fix",
                 break_loop=False
             )
+
+# Plugin export - required for framework tool discovery
+tool = DevSkillGuard
+export = {"dev_skill_guard": DevSkillGuard}

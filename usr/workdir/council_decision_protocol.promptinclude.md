@@ -91,3 +91,9 @@ args: { method: "cc", councils: "deal_strategy", query: "Pricing for Indiana ren
 This file **replaces** the system prompt instruction: "For major changes, invoke the Thinking Council, present the decision in the required table, and wait for explicit user confirmation."
 
 The old rule used a single generic Thinking Council. The new system uses the **Council of Councils** meta method which dispatches to multiple specialized domain councils for richer, more accurate multi-perspective analysis.
+
+---
+
+## Related Protocol
+
+**[CC Validation Protocol](cc_validation_protocol.promptinclude.md)** — Extends this protocol with mandatory Pre-Work and Post-Work quality gates for development plans. Uses a Risk Impact Score (RIS) to rate-limit CC invocations. Triggered at RIS ≥ 6 with exemptions for trivial work, an Innovation Sandbox tier for POCs, and Emergency Override for critical incidents.

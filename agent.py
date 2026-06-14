@@ -371,9 +371,7 @@ class Agent:
 
     @extension.extensible
     async def monologue(self):
-        MAX_OUTER_ITERATIONS = 100  # Lockup Guard: prevent infinite outer loop
-        MAX_INNER_ITERATIONS = 200  # Lockup Guard: prevent infinite inner loop
-        for _outer in range(MAX_OUTER_ITERATIONS):
+        while True:
             try:
                 # loop data dictionary to pass to extensions
                 self.loop_data = LoopData(user_message=self.last_user_message)
@@ -385,7 +383,7 @@ class Agent:
                 printer = PrintStyle(italic=True, font_color="#b3ffd9", padding=False)
 
                 # let the agent run message loop until he stops it with a response tool
-                for _inner in range(MAX_INNER_ITERATIONS):
+                while True:
 
                     self.context.streaming_agent = self  # mark self as current streamer
                     self.loop_data.iteration += 1
@@ -1014,8 +1012,11 @@ class Agent:
         loop_data: LoopData | None,
         **kwargs,
     ):
-        from tools.unknown import Unknown
-        from helpers.tool import Tool
+        from helpers.tool import Tool, Response as _ToolResp
+
+        class Unknown(Tool):
+            async def execute(self, **kwargs):
+                return _ToolResp(message=self.agent.read_prompt("fw.tool_not_found.md", tool_name=self.name), break_loop=False)
 
         classes = []
 
