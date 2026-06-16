@@ -580,7 +580,7 @@ def _apply_settings(previous: Settings | None, browser_timezone: str | None = No
             config = initialize_agent(override_settings={"agent_profile": profile})
             ctx.config = config  # reinitialize context config with new settings
             # apply config to agents
-            agent = ctx.agent0
+            agent = getattr(ctx, 'agent0', None)
             while agent:
                 agent.config = ctx.config
                 agent = agent.get_data(agent.DATA_NAME_SUBORDINATE)
