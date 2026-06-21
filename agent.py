@@ -19,6 +19,7 @@ from helpers import (
 )
 from helpers import extension
 from helpers.print_style import PrintStyle
+from helpers.strings import truncate_text
 
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -41,6 +42,13 @@ from helpers.llm_result import (
 )
 from helpers.litellm_transport import ResponsesTransport
 from helpers.responses_tools import build_responses_function_tools, original_tool_name
+
+REASONING_ONLY_REPAIR_ATTEMPTS_KEY = "_reasoning_only_repair_attempts"
+MAX_REASONING_ONLY_REPAIR_ATTEMPTS = 2
+REPEATED_RESPONSE_REPAIR_ATTEMPTS_KEY = "_repeated_response_repair_attempts"
+MAX_REPEATED_RESPONSE_REPAIR_ATTEMPTS = 2
+LAST_SUCCESSFUL_TOOL_REQUEST_KEY = "_last_successful_tool_request"
+
 
 class AgentContextType(Enum):
     USER = "user"
@@ -500,26 +508,29 @@ class Agent:
 
                         await self.handle_intervention(agent_response)
 
+                        reasoning_only_handled, reasoning_only_final = (
+                            self._handle_reasoning_only_result(llm_result)
+                        )
+                        if reasoning_only_handled:
+                            if reasoning_only_final:
+                                return reasoning_only_final
+                            continue
+
                         if (
                             self.loop_data.last_response == agent_response
                         ):  # if assistant_response is the same as last message in history, let him know
-                            # Append the assistant's response to the history
-                            log_item = self.loop_data.params_temporary.get("log_item_generating")
-                            assistant_message = self.hist_add_ai_response(
-                                agent_response,
-                                id=log_item.id if log_item else "",
-                                llm_result=llm_result,
+                            repeated_handled, repeated_final = (
+                                self._handle_repeated_response_result(llm_result)
                             )
-                            self._remember_llm_result_state(llm_result, assistant_message)
-                            # Append warning message to the history
-                            warning_msg = self.read_prompt("fw.msg_repeat.md")
-                            wmsg = self.hist_add_warning(message=warning_msg)
-                            PrintStyle(font_color="orange", padding=True).print(
-                                warning_msg
-                            )
-                            self.context.log.log(type="warning", content=warning_msg, id=wmsg.id)
+                            if repeated_handled:
+                                if repeated_final:
+                                    return repeated_final
+                                continue
 
                         else:  # otherwise proceed with tool
+                            self.loop_data.params_persistent.pop(
+                                REPEATED_RESPONSE_REPAIR_ATTEMPTS_KEY, None
+                            )
                             # Append the assistant's response to the history
                             log_item = self.loop_data.params_temporary.get("log_item_generating")
                             assistant_message = self.hist_add_ai_response(
@@ -1108,7 +1119,7 @@ class Agent:
         if (
             llm_result.mode == "responses"
             and llm_result.response
-            and extract_tools.json_parse_dirty(llm_result.response) is None
+            and extract_tools.extract_tool_request(llm_result.response) is None
         ):
             return llm_result.response
         return await self.process_tools(llm_result.response)
@@ -1122,6 +1133,13 @@ class Agent:
         responses_item_factory: Callable[[Any], dict[str, Any]] | None = None,
     ):
         raw_tool_name = raw_tool_name or tool_name
+        tool_args = extract_tools.sanitize_tool_args(tool_args or {})
+        duplicate_final = self._handle_duplicate_completed_tool_request(
+            tool_name, tool_args
+        )
+        if duplicate_final:
+            return duplicate_final
+
         tool_method = None
         tool = None
 
@@ -1196,6 +1214,23 @@ class Agent:
 
             await tool.after_execution(response)
             await self.handle_intervention()
+
+            if not self._is_error_tool_response(response):
+                self._record_successful_tool_request(tool_name, tool_args, response)
+                completed_message = self._tool_completion_final_message(
+                    tool_name, tool_args, response
+                )
+                if completed_message:
+                    PrintStyle(font_color="green", padding=True).print(
+                        completed_message
+                    )
+                    self.context.log.log(
+                        type="response",
+                        heading=f"{self.agent_name}: Tool action completed",
+                        content=completed_message,
+                    )
+                    self._clear_responses_pending_state()
+                    return completed_message
 
             if response.break_loop:
                 self._clear_responses_pending_state()
@@ -1387,10 +1422,254 @@ class Agent:
             state.pop("previous_response_id", None)
             self.set_data(Agent.DATA_NAME_RESPONSES_STATE, state)
 
+    def _handle_reasoning_only_result(
+        self, llm_result: LLMResult
+    ) -> tuple[bool, str | None]:
+        if not self._is_reasoning_only_result(llm_result):
+            return False, None
+
+        attempts = int(
+            self.loop_data.params_persistent.get(REASONING_ONLY_REPAIR_ATTEMPTS_KEY, 0)
+        ) + 1
+        self.loop_data.params_persistent[REASONING_ONLY_REPAIR_ATTEMPTS_KEY] = attempts
+
+        if attempts > MAX_REASONING_ONLY_REPAIR_ATTEMPTS:
+            final_message = self.read_prompt(
+                "fw.msg_reasoning_only_failed.md",
+                attempts=MAX_REASONING_ONLY_REPAIR_ATTEMPTS,
+            )
+            PrintStyle(font_color="red", padding=True).print(final_message)
+            self.context.log.log(
+                type="response",
+                heading=f"{self.agent_name}: Local model tool-call failure",
+                content=final_message,
+            )
+            return True, final_message
+
+        warning_msg = self.read_prompt("fw.msg_reasoning_only.md")
+        wmsg = self.hist_add_warning(message=warning_msg)
+        PrintStyle(font_color="orange", padding=True).print(warning_msg)
+        self.context.log.log(type="warning", content=warning_msg, id=wmsg.id)
+        return True, None
+
+    def _is_reasoning_only_result(self, llm_result: LLMResult) -> bool:
+        return (
+            not (llm_result.response or "").strip()
+            and bool((llm_result.reasoning or "").strip())
+            and not llm_result.function_calls
+            and not llm_result.builtin_items
+        )
+
+    def _handle_repeated_response_result(
+        self, llm_result: LLMResult
+    ) -> tuple[bool, str | None]:
+        last_tool_result = self._last_successful_tool_result_summary()
+        if last_tool_result:
+            final_message = self.read_prompt(
+                "fw.msg_repeat_completed.md",
+                last_tool_result=last_tool_result,
+            )
+            PrintStyle(font_color="green", padding=True).print(final_message)
+            self.context.log.log(
+                type="response",
+                heading=f"{self.agent_name}: Completed repeated action",
+                content=final_message,
+            )
+            return True, final_message
+
+        attempts = int(
+            self.loop_data.params_persistent.get(REPEATED_RESPONSE_REPAIR_ATTEMPTS_KEY, 0)
+        ) + 1
+        self.loop_data.params_persistent[REPEATED_RESPONSE_REPAIR_ATTEMPTS_KEY] = attempts
+
+        if attempts > MAX_REPEATED_RESPONSE_REPAIR_ATTEMPTS:
+            final_message = self.read_prompt(
+                "fw.msg_repeat_failed.md",
+                attempts=MAX_REPEATED_RESPONSE_REPAIR_ATTEMPTS,
+                last_tool_result=(
+                    last_tool_result
+                    or "No successful tool result was available before the repeated output."
+                ),
+            )
+            PrintStyle(font_color="red", padding=True).print(final_message)
+            self.context.log.log(
+                type="response",
+                heading=f"{self.agent_name}: Repeated response stopped",
+                content=final_message,
+            )
+            return True, final_message
+
+        warning_msg = self.read_prompt("fw.msg_repeat.md")
+        wmsg = self.hist_add_warning(message=warning_msg)
+        PrintStyle(font_color="orange", padding=True).print(warning_msg)
+        self.context.log.log(type="warning", content=warning_msg, id=wmsg.id)
+        return True, None
+
+    def _last_successful_tool_result_summary(self) -> str | None:
+        for message in reversed(self.history.all_messages()):
+            if message.ai:
+                continue
+            if not isinstance(message.content, dict):
+                return None
+            if "user_message" in message.content:
+                return None
+            tool_name = str(message.content.get("tool_name") or "").strip()
+            tool_result = str(message.content.get("tool_result") or "").strip()
+            if not tool_name or not tool_result:
+                continue
+            if tool_result.lower().startswith("error"):
+                continue
+            return (
+                "Last completed tool result:\n"
+                f"{tool_name}: {truncate_text(tool_result, 1000)}"
+            )
+        return None
+
+    def _handle_duplicate_completed_tool_request(
+        self, tool_name: str, tool_args: dict
+    ) -> str | None:
+        if not self._is_duplicate_completed_tool_request(tool_name, tool_args):
+            return None
+
+        last = self.loop_data.params_persistent.get(LAST_SUCCESSFUL_TOOL_REQUEST_KEY)
+        last_tool_result = ""
+        if isinstance(last, dict):
+            last_tool_result = str(last.get("last_tool_result") or "")
+        if not last_tool_result:
+            last_tool_result = (
+                self._last_successful_tool_result_summary()
+                or "The previous tool action completed successfully."
+            )
+        final_message = self.read_prompt(
+            "fw.msg_repeat_completed.md",
+            last_tool_result=last_tool_result,
+        )
+        PrintStyle(font_color="green", padding=True).print(final_message)
+        self.context.log.log(
+            type="response",
+            heading=f"{self.agent_name}: Duplicate tool action stopped",
+            content=final_message,
+        )
+        self._clear_responses_pending_state()
+        return final_message
+
+    def _record_successful_tool_request(
+        self, tool_name: str, tool_args: dict, response: Any
+    ) -> None:
+        last_tool_result = self._last_successful_tool_result_summary() or (
+            "Last completed tool result:\n"
+            f"{tool_name}: {truncate_text(str(getattr(response, 'message', '')), 1000)}"
+        )
+        self.loop_data.params_persistent[LAST_SUCCESSFUL_TOOL_REQUEST_KEY] = {
+            "tool_name": tool_name,
+            "fingerprint": self._tool_request_fingerprint(tool_name, tool_args),
+            "completion_key": self._tool_completion_key(tool_name, tool_args, response),
+            "open_in_canvas": self._tool_open_in_canvas(tool_args, response),
+            "last_tool_result": last_tool_result,
+        }
+
+    def _is_duplicate_completed_tool_request(self, tool_name: str, tool_args: dict) -> bool:
+        last = self.loop_data.params_persistent.get(LAST_SUCCESSFUL_TOOL_REQUEST_KEY)
+        if not isinstance(last, dict):
+            return False
+        if tool_name != str(last.get("tool_name") or ""):
+            return False
+
+        if self._tool_request_fingerprint(tool_name, tool_args) == last.get(
+            "fingerprint"
+        ):
+            return True
+
+        completion_key = self._tool_completion_key(tool_name, tool_args)
+        if not completion_key or completion_key != last.get("completion_key"):
+            return False
+        return bool(last.get("open_in_canvas")) or self._tool_open_in_canvas(tool_args)
+
+    def _tool_completion_final_message(
+        self, tool_name: str, tool_args: dict, response: Any
+    ) -> str | None:
+        if not self._tool_open_in_canvas(tool_args, response):
+            return None
+        completion_key = self._tool_completion_key(tool_name, tool_args, response)
+        if not completion_key:
+            return None
+        if tool_name == "text_editor":
+            path = self._tool_path(tool_args, response)
+            return self.read_prompt(
+                "fw.msg_tool_completed.md",
+                message=f"The document was saved and opened in the canvas: {path}",
+            )
+        return None
+
+    def _tool_request_fingerprint(self, tool_name: str, tool_args: dict) -> str:
+        try:
+            serialized_args = json.dumps(
+                extract_tools.sanitize_tool_args(tool_args or {}),
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            )
+        except Exception:
+            serialized_args = str(tool_args)
+        return f"{tool_name}:{serialized_args}"
+
+    def _tool_completion_key(
+        self, tool_name: str, tool_args: dict, response: Any | None = None
+    ) -> str:
+        action = self._tool_action(tool_args, response)
+        path = self._tool_path(tool_args, response)
+        if tool_name == "text_editor" and action in {"write", "patch"} and path:
+            return f"{tool_name}:{action}:{path}"
+        return ""
+
+    def _tool_action(self, tool_args: dict, response: Any | None = None) -> str:
+        additional = getattr(response, "additional", None) if response else None
+        if not isinstance(additional, dict):
+            additional = {}
+        action = additional.get("action") or tool_args.get("action") or tool_args.get(
+            "method"
+        )
+        return str(action or "").strip()
+
+    def _tool_path(self, tool_args: dict, response: Any | None = None) -> str:
+        additional = getattr(response, "additional", None) if response else None
+        if not isinstance(additional, dict):
+            additional = {}
+        path = additional.get("path") or tool_args.get("path") or ""
+        return str(path or "").strip()
+
+    def _tool_open_in_canvas(
+        self, tool_args: dict, response: Any | None = None
+    ) -> bool:
+        additional = getattr(response, "additional", None) if response else None
+        if not isinstance(additional, dict):
+            additional = {}
+        value = (
+            additional.get("open_in_canvas")
+            if "open_in_canvas" in additional
+            else tool_args.get("open_in_canvas")
+        )
+        if value is None:
+            value = tool_args.get("open_canvas") or tool_args.get("open_document")
+        return self._truthy(value)
+
+    def _truthy(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def _is_error_tool_response(self, response: Any) -> bool:
+        message = str(getattr(response, "message", "") or "").strip().lower()
+        return message.startswith("error")
+
     @extension.extensible
     async def process_tools(self, msg: str):
         # search for tool usage requests in agent message
-        tool_request = extract_tools.json_parse_dirty(msg)
+        tool_request = extract_tools.extract_tool_request(msg)
 
         raw_tool_name = ""
         tool_args = {}
@@ -1407,6 +1686,12 @@ class Agent:
 
         if tool_request is not None:
             tool_name = raw_tool_name  # Initialize tool_name with raw_tool_name
+            duplicate_final = self._handle_duplicate_completed_tool_request(
+                tool_name, tool_args
+            )
+            if duplicate_final:
+                return duplicate_final
+
             tool_method = None  # Initialize tool_method
 
             tool = None  # Initialize tool to None
@@ -1470,7 +1755,27 @@ class Agent:
                     await tool.after_execution(response)
                     await self.handle_intervention()
 
+                    if not self._is_error_tool_response(response):
+                        self._record_successful_tool_request(
+                            tool_name, tool_args, response
+                        )
+                        completed_message = self._tool_completion_final_message(
+                            tool_name, tool_args, response
+                        )
+                        if completed_message:
+                            PrintStyle(font_color="green", padding=True).print(
+                                completed_message
+                            )
+                            self.context.log.log(
+                                type="response",
+                                heading=f"{self.agent_name}: Tool action completed",
+                                content=completed_message,
+                            )
+                            self._clear_responses_pending_state()
+                            return completed_message
+
                     if response.break_loop:
+                        self._clear_responses_pending_state()
                         return response.message
                 finally:
                     self.loop_data.current_tool = None

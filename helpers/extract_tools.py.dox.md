@@ -12,7 +12,12 @@
 - `extract_tools.py.dox.md` owns durable notes about responsibilities, contracts, side effects, and verification for that implementation.
 - Top-level functions:
 - `json_parse_dirty(json: str) -> dict[str, Any] | None`
+- `extract_tool_request(content: str) -> dict[str, Any] | None`
+- `iter_json_dicts(content: str) -> list[dict[str, Any]]`
+- `iter_json_object_strings(content: str) -> list[str]`
+- `repair_tool_request(tool_request: Any) -> dict[str, Any] | None`
 - `normalize_tool_request(tool_request: Any) -> tuple[str, dict]`
+- `sanitize_tool_args(value: Any) -> Any`
 - `extract_json_root_string(content: str) -> str | None`
 - `extract_json_object_string(content)`
 - `extract_json_string(content)`
@@ -21,13 +26,16 @@
 ## Runtime Contracts
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
+- `extract_tool_request` is the executable-call entrypoint for model text; it may repair common local-model shapes into canonical `{"tool_name": ..., "tool_args": ...}` requests.
+- Repair is intentionally narrow: preserve explicit tool names, move root-level args into `tool_args`, accept common argument aliases, and synthesize final `response` calls only for clear non-action response intent.
+- Normalized tool arguments are sanitized recursively so invalid Unicode surrogates from model output do not crash UTF-8 file writes, logs, or tool execution.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: settings/state persistence.
 - Imported dependency areas include: `dirty_json`, `helpers.modules`, `re`, `regex`, `typing`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `extract_json_object_string`, `content.find`, `DirtyJson`, `content.rfind`, `regex.search`, `re.sub`, `json.strip`, `ValueError`, `tool_name.split`, `parser.parse`, `match.group`, `match.group.replace`, `DirtyJson.parse_string`.
+- Important called helpers/classes observed in the source: `extract_json_object_string`, `extract_json_root_string`, `content.find`, `DirtyJson`, `content.rfind`, `regex.search`, `re.sub`, `json.strip`, `ValueError`, `tool_name.split`, `parser.parse`, `match.group`, `match.group.replace`, `DirtyJson.parse_string`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance

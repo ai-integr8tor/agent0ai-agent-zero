@@ -1,0 +1,1 @@
+Your previous output was reasoning only. Now output exactly one valid JSON object in the assistant response, not in the reasoning stream. The JSON object must include `tool_name` and `tool_args`. For a final answer, use `tool_name`: `response` and `tool_args`: {"text":"..."}. Do not repeat prior reasoning or explain this warning.

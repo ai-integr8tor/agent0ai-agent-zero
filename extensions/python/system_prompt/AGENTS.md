@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Ordered Python files own main, tools, MCP, secrets, skills, and project prompt sections.
+- Ordered Python files own main, small-local-model, tools, MCP, secrets, skills, and project prompt sections.
 
 ## Local Contracts
 

@@ -307,6 +307,73 @@ async def test_chat_completions_escape_hatch_still_uses_acompletion(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_chat_completions_with_a0_tools_uses_non_stream_acompletion(monkeypatch):
+    calls: list[dict] = []
+
+    async def fake_acompletion(*args, **kwargs):
+        calls.append(kwargs)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "response",
+                                    "arguments": '{"text":"ok"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+
+    async def fake_aresponses(*args, **kwargs):
+        raise AssertionError("Responses path should not be used")
+
+    async def fake_rate_limiter(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(litellm_transport, "acompletion", fake_acompletion)
+    monkeypatch.setattr(litellm_transport, "aresponses", fake_aresponses)
+    monkeypatch.setattr(models, "apply_rate_limiter", fake_rate_limiter)
+
+    wrapper = models.LiteLLMChatWrapper(
+        model="test-model",
+        provider="ollama",
+        model_config=None,
+        a0_api_mode="chat_completions",
+    )
+
+    async def response_callback(chunk: str, full: str):
+        raise AssertionError("tool-call chat completion should not stream")
+
+    result = await wrapper.unified_turn(
+        messages=[],
+        response_callback=response_callback,
+        a0_responses_function_tools=[
+            {
+                "type": "function",
+                "name": "response",
+                "description": "Final answer",
+                "parameters": {"type": "object"},
+            }
+        ],
+    )
+
+    assert extract_tools.extract_tool_request(result.response) == {
+        "tool_name": "response",
+        "tool_args": {"text": "ok"},
+    }
+    assert calls[0]["stream"] is False
+    assert calls[0]["tools"][0]["function"]["name"] == "response"
+
+
+@pytest.mark.asyncio
 async def test_unified_call_retries_responses_with_high_reasoning(monkeypatch):
     validation_error = ValueError(
         "1 validation error for ResponseCreatedEvent\n"
@@ -741,6 +808,67 @@ def test_chat_kwargs_add_openai_prompt_cache_key_for_chat_completions():
 
     assert kwargs["prompt_cache_key"].startswith("a0-")
     assert kwargs["max_tokens"] == 10
+
+
+def test_chat_kwargs_convert_a0_response_tools_to_chat_tools():
+    kwargs = litellm_transport.ChatCompletionsTransport.prepare_kwargs(
+        {
+            "a0_responses_function_tools": [
+                {
+                    "type": "function",
+                    "name": "text_editor",
+                    "description": "Edit text files",
+                    "parameters": {"type": "object"},
+                }
+            ],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+        },
+        model="ollama/qwen3.5:9b",
+    )
+
+    assert kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "text_editor",
+                "description": "Edit text files",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+    assert kwargs["tool_choice"] == "auto"
+    assert kwargs["parallel_tool_calls"] is True
+    assert "a0_responses_function_tools" not in kwargs
+
+
+def test_chat_parse_turns_tool_calls_into_a0_tool_json():
+    parsed = litellm_transport.ChatCompletionsTransport.parse(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "text_editor",
+                                    "arguments": '{"action":"write","path":"todos.md"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+    )
+
+    assert extract_tools.extract_tool_request(parsed["response_delta"]) == {
+        "tool_name": "text_editor",
+        "tool_args": {"action": "write", "path": "todos.md"},
+    }
 
 
 def test_chat_messages_strip_cache_control_for_openai_prompt_cache():

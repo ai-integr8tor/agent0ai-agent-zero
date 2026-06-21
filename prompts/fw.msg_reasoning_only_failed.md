@@ -1,0 +1,1 @@
+The selected model produced reasoning-only output {{attempts}} times and did not emit a valid tool request. Select a model with stronger JSON/tool-call reliability or disable thinking for this local model, then try again.
