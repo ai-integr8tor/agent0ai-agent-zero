@@ -1104,17 +1104,36 @@ class TimeTravelService:
         env["GIT_OPTIONAL_LOCKS"] = "0"
         return env
 
+    def _cleanup_git_index_lock(self) -> None:
+        """Remove a stale Git index lock after a killed Git subprocess.
+
+        subprocess timeouts terminate Git before it can always release
+        repo.git/index.lock. Leaving that lock in place poisons all later
+        snapshot attempts for the workspace, so cleanup is best-effort and
+        intentionally preserves the original timeout/error path.
+        """
+        lock_path = self.workspace.repo_git_path / "index.lock"
+        try:
+            if lock_path.exists():
+                lock_path.unlink()
+        except OSError:
+            pass
+
     def _run_git_dir(self, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", f"--git-dir={self.workspace.repo_git_path}", *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=self._git_env(),
-            timeout=GIT_TIMEOUT_SECONDS,
-            check=check,
-        )
+        try:
+            return subprocess.run(
+                ["git", f"--git-dir={self.workspace.repo_git_path}", *args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=self._git_env(),
+                timeout=GIT_TIMEOUT_SECONDS,
+                check=check,
+            )
+        except subprocess.TimeoutExpired:
+            self._cleanup_git_index_lock()
+            raise
 
     def _shadow_repo_valid(self) -> bool:
         if not self.workspace.repo_git_path.is_dir():
@@ -1202,24 +1221,28 @@ class TimeTravelService:
 
     def _git(self, *args: str, input: str | None = None, env: dict[str, str] | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
         self.workspace.shadow_path.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(
-            [
-                "git",
-                f"--git-dir={self.workspace.repo_git_path}",
-                f"--work-tree={self.workspace.real_path}",
-                "-c",
-                "core.bare=false",
-                *args,
-            ],
-            input=input,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env or self._git_env(),
-            cwd=str(self.workspace.real_path) if self.workspace.real_path.exists() else None,
-            timeout=GIT_TIMEOUT_SECONDS,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    "git",
+                    f"--git-dir={self.workspace.repo_git_path}",
+                    f"--work-tree={self.workspace.real_path}",
+                    "-c",
+                    "core.bare=false",
+                    *args,
+                ],
+                input=input,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env or self._git_env(),
+                cwd=str(self.workspace.real_path) if self.workspace.real_path.exists() else None,
+                timeout=GIT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self._cleanup_git_index_lock()
+            raise
         if check and completed.returncode != 0:
             raise GitCommandError(
                 (completed.stderr or completed.stdout or "Git command failed.").strip(),
@@ -1230,21 +1253,25 @@ class TimeTravelService:
 
     def _git_bytes(self, *args: str, input: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess[bytes]:
         self.workspace.shadow_path.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(
-            [
-                "git",
-                f"--git-dir={self.workspace.repo_git_path}",
-                f"--work-tree={self.workspace.real_path}",
-                "-c",
-                "core.bare=false",
-                *args,
-            ],
-            input=input,
-            capture_output=True,
-            env=self._git_env(),
-            cwd=str(self.workspace.real_path) if self.workspace.real_path.exists() else None,
-            timeout=GIT_TIMEOUT_SECONDS,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    "git",
+                    f"--git-dir={self.workspace.repo_git_path}",
+                    f"--work-tree={self.workspace.real_path}",
+                    "-c",
+                    "core.bare=false",
+                    *args,
+                ],
+                input=input,
+                capture_output=True,
+                env=self._git_env(),
+                cwd=str(self.workspace.real_path) if self.workspace.real_path.exists() else None,
+                timeout=GIT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            self._cleanup_git_index_lock()
+            raise
         if check and completed.returncode != 0:
             stderr = completed.stderr.decode("utf-8", errors="replace")
             stdout = completed.stdout.decode("utf-8", errors="replace")
