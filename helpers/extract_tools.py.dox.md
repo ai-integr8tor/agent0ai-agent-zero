@@ -28,6 +28,7 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - `extract_tool_request` is the executable-call entrypoint for model text; it may repair common local-model shapes into canonical `{"tool_name": ..., "tool_args": ...}` requests.
 - Repair is intentionally narrow: preserve explicit tool names, move root-level args into `tool_args`, accept common argument aliases, and synthesize final `response` calls only for clear non-action response intent.
+- Incomplete `response` tool JSON may be recovered only when an explicit response tool name and a `text`-like string value are present; non-response tool calls still require complete parseable JSON before execution.
 - Normalized tool arguments are sanitized recursively so invalid Unicode surrogates from model output do not crash UTF-8 file writes, logs, or tool execution.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: settings/state persistence.

@@ -1,4 +1,6 @@
 
+import json
+
 from .dirty_json import DirtyJson
 import regex, re
 from helpers.modules import load_classes_from_file, load_classes_from_folder # keep here for backwards compatibility
@@ -88,7 +90,26 @@ def extract_tool_request(content: str) -> dict[str, Any] | None:
             except ValueError:
                 continue
             return {"tool_name": tool_name, "tool_args": tool_args}
+    partial_response = extract_partial_response_tool_request(content)
+    if partial_response:
+        return partial_response
     return None
+
+
+def extract_partial_response_tool_request(content: str) -> dict[str, Any] | None:
+    if not content or not isinstance(content, str):
+        return None
+    if not _contains_response_tool_name(content):
+        return None
+
+    text_value = _partial_json_string_value(content, RESPONSE_TEXT_KEYS)
+    if not text_value:
+        return None
+
+    return {
+        "tool_name": "response",
+        "tool_args": sanitize_tool_args({"text": text_value}),
+    }
 
 
 def iter_json_dicts(content: str) -> list[dict[str, Any]]:
@@ -263,6 +284,72 @@ def _intent_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _contains_response_tool_name(content: str) -> bool:
+    for key in TOOL_NAME_KEYS:
+        pattern = rf'"{re.escape(key)}"\s*:\s*"response"'
+        if re.search(pattern, content):
+            return True
+    return False
+
+
+def _partial_json_string_value(content: str, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        pattern = rf'"{re.escape(key)}"\s*:\s*"'
+        match = re.search(pattern, content)
+        if not match:
+            continue
+        return _decode_json_string_prefix(content[match.end():]).strip()
+    return ""
+
+
+def _decode_json_string_prefix(content: str) -> str:
+    chars: list[str] = []
+    index = 0
+    while index < len(content):
+        char = content[index]
+        if char == '"':
+            break
+        if char != "\\":
+            chars.append(char)
+            index += 1
+            continue
+
+        index += 1
+        if index >= len(content):
+            chars.append("\\")
+            break
+
+        escaped = content[index]
+        if escaped in {'"', "\\", "/"}:
+            chars.append(escaped)
+        elif escaped == "b":
+            chars.append("\b")
+        elif escaped == "f":
+            chars.append("\f")
+        elif escaped == "n":
+            chars.append("\n")
+        elif escaped == "r":
+            chars.append("\r")
+        elif escaped == "t":
+            chars.append("\t")
+        elif escaped == "u":
+            hex_value = content[index + 1 : index + 5]
+            if len(hex_value) == 4 and all(c in "0123456789abcdefABCDEF" for c in hex_value):
+                chars.append(chr(int(hex_value, 16)))
+                index += 4
+            else:
+                chars.append("\\u")
+        else:
+            chars.append(escaped)
+        index += 1
+
+    decoded = "".join(chars)
+    try:
+        return json.loads(json.dumps(decoded))
+    except Exception:
+        return decoded
 
 
 def extract_json_root_string(content: str) -> str | None:

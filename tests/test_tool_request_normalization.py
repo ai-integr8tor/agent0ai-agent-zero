@@ -103,6 +103,25 @@ def test_extract_tool_request_repairs_response_string_args() -> None:
     }
 
 
+def test_extract_tool_request_recovers_incomplete_response_text() -> None:
+    assert extract_tool_request(
+        '{"tool_name":"response","tool_args":{"text":"### Report\\n\\nFinding: \\"quoted'
+    ) == {
+        "tool_name": "response",
+        "tool_args": {"text": '### Report\n\nFinding: "quoted'},
+    }
+
+
+def test_extract_tool_request_does_not_recover_incomplete_action_tool() -> None:
+    assert (
+        extract_tool_request(
+            '{"tool_name":"text_editor","tool_args":{"content":"# My Tasks'
+        )
+        is None
+    )
+    assert extract_tool_request('{"') is None
+
+
 def test_extract_tool_request_sanitizes_surrogate_tool_args() -> None:
     request = extract_tool_request(
         r'{"tool_name":"text_editor","tool_args":{"content":"# \ud83d\udcdd My Tasks"}}'
