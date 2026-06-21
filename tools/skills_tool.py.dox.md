@@ -25,6 +25,7 @@
 - Update this file whenever tool arguments, output shape, `break_loop` behavior, intervention handling, prompt instructions, or side effects change.
 - `SkillsTool` is a `Tool`.
 - `SkillsTool` defines `execute(...)`.
+- Loading a skill stores it for prompt Protocol injection on subsequent turns.
 - Observed side-effect areas: filesystem reads, filesystem deletion, settings/state persistence.
 - Imported dependency areas include: `__future__`, `helpers`, `helpers.print_style`, `helpers.tool`, `pathlib`, `typing`.
 

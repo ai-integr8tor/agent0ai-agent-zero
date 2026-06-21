@@ -10,14 +10,14 @@ class IncludeActiveSkills(Extension):
         if not self.agent:
             return
 
-        extras = loop_data.extras_persistent
-        extras.pop("active_skills", None)
+        protocol = loop_data.protocol_persistent
+        protocol.pop("active_skills", None)
 
         content = skills.build_active_skills_prompt(self.agent)
         if not content:
             return
 
-        extras["active_skills"] = self.agent.read_prompt(
+        protocol["active_skills"] = self.agent.read_prompt(
             "agent.system.active_skills.md",
             skills=content,
         )

@@ -44,7 +44,7 @@ Direct child DOX files:
 | [hist_add_tool_result/AGENTS.md](hist_add_tool_result/AGENTS.md) | Tool-result history side effects. |
 | [job_loop/AGENTS.md](job_loop/AGENTS.md) | Periodic backend maintenance jobs. |
 | [message_loop_end/AGENTS.md](message_loop_end/AGENTS.md) | End-of-message-loop history and persistence behavior. |
-| [message_loop_prompts_after/AGENTS.md](message_loop_prompts_after/AGENTS.md) | Prompt extras appended after message-loop prompt construction. |
+| [message_loop_prompts_after/AGENTS.md](message_loop_prompts_after/AGENTS.md) | Prompt protocol and extras assembled around message-loop prompt construction. |
 | [message_loop_prompts_before/AGENTS.md](message_loop_prompts_before/AGENTS.md) | Pre-prompt-construction message-loop gates. |
 | [message_loop_start/AGENTS.md](message_loop_start/AGENTS.md) | Start-of-message-loop iteration state. |
 | [monologue_end/AGENTS.md](monologue_end/AGENTS.md) | End-of-monologue UI and cleanup behavior. |

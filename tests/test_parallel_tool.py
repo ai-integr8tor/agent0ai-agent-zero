@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import sys
 from types import SimpleNamespace
@@ -61,6 +62,27 @@ class _FakeAgent:
         self.agent_name = "A0"
 
 
+class _FakeDeferredTask:
+    def __init__(self, *, ready: bool = False, alive: bool = True, result=None) -> None:
+        self.ready = ready
+        self.alive = alive
+        self._result = result
+        self.killed = 0
+
+    def is_ready(self):
+        return self.ready
+
+    def is_alive(self):
+        return self.alive
+
+    async def result(self):
+        return self._result
+
+    def kill(self):
+        self.killed += 1
+        self.alive = False
+
+
 def test_normalize_parallel_tool_calls_accepts_normal_tool_request_shapes() -> None:
     calls = parallel_tools.normalize_parallel_tool_calls(
         [
@@ -85,6 +107,18 @@ def test_normalize_parallel_tool_calls_rejects_nested_parallel() -> None:
     with pytest.raises(ValueError, match="cannot be nested"):
         parallel_tools.normalize_parallel_tool_calls(
             [{"tool_name": "parallel", "tool_args": {"tool_calls": []}}]
+        )
+
+
+def test_normalize_parallel_tool_calls_rejects_document_query() -> None:
+    with pytest.raises(ValueError, match="document_query.*parallel"):
+        parallel_tools.normalize_parallel_tool_calls(
+            [
+                {
+                    "tool_name": "document_query",
+                    "tool_args": {"document": "/tmp/report.pdf"},
+                }
+            ]
         )
 
 
@@ -123,6 +157,143 @@ async def test_parallel_jobs_extras_lists_running_and_ready_jobs() -> None:
     assert "search-1234abcd" in extras
     assert "callsubordin-5678efgh" in extras
     assert "ready to collect" in extras
+
+
+@pytest.mark.asyncio
+async def test_parallel_await_timeout_keeps_running_jobs_awaitable(monkeypatch) -> None:
+    agent = _FakeAgent()
+    task = _FakeDeferredTask(alive=True)
+    job = parallel_tools.ParallelJob(
+        id="wait-1234abcd",
+        parent_context_id="ctx",
+        index=0,
+        tool_name="wait",
+        tool_args={"seconds": 60},
+        kind="tool",
+        state="running",
+        created_at=99.0,
+        started_at=99.0,
+        deferred_task=task,  # type: ignore[arg-type]
+    )
+    agent.context.set_data(parallel_tools.PARALLEL_JOBS_KEY, {job.id: job})
+    times = iter([100.0, 102.0])
+    monkeypatch.setattr(
+        parallel_tools.time,
+        "time",
+        lambda: next(times, 102.0),
+    )
+
+    results = await parallel_tools.await_parallel_jobs(  # type: ignore[arg-type]
+        agent,
+        [job.id],
+        timeout=1,
+        collect=True,
+        wait=True,
+    )
+    payload = json.loads(parallel_tools.format_parallel_results(results))
+
+    assert results[0]["state"] == "running"
+    assert results[0]["wait_timed_out"] is True
+    assert payload["status"] == "waiting"
+    assert payload["wait_timeout"] is True
+    assert "await" in payload["instruction"]
+    assert task.killed == 0
+    assert agent.context.get_data(parallel_tools.PARALLEL_JOBS_KEY)[job.id] is job
+
+
+@pytest.mark.asyncio
+async def test_parallel_collect_returns_running_jobs_without_waiting_or_canceling() -> None:
+    from tools.parallel import ParallelTool
+
+    agent = _FakeAgent()
+    task = _FakeDeferredTask(alive=True)
+    job = parallel_tools.ParallelJob(
+        id="wait-collect",
+        parent_context_id="ctx",
+        index=0,
+        tool_name="wait",
+        tool_args={"seconds": 60},
+        kind="tool",
+        state="running",
+        deferred_task=task,  # type: ignore[arg-type]
+    )
+    agent.context.set_data(parallel_tools.PARALLEL_JOBS_KEY, {job.id: job})
+    tool = ParallelTool(
+        agent,  # type: ignore[arg-type]
+        "parallel",
+        None,
+        {"action": "collect", "job_ids": [job.id]},
+        "",
+        None,
+    )
+
+    response = await tool.execute(**tool.args)
+    payload = json.loads(response.message)
+
+    assert payload["status"] == "running"
+    assert payload["jobs"][0]["job_id"] == job.id
+    assert "wait_timeout" not in payload
+    assert task.killed == 0
+    assert agent.context.get_data(parallel_tools.PARALLEL_JOBS_KEY)[job.id] is job
+
+
+@pytest.mark.asyncio
+async def test_parallel_cancel_still_stops_and_removes_running_jobs() -> None:
+    agent = _FakeAgent()
+    task = _FakeDeferredTask(alive=True)
+    job = parallel_tools.ParallelJob(
+        id="wait-cancel",
+        parent_context_id="ctx",
+        index=0,
+        tool_name="wait",
+        tool_args={"seconds": 60},
+        kind="tool",
+        state="running",
+        deferred_task=task,  # type: ignore[arg-type]
+    )
+    agent.context.set_data(parallel_tools.PARALLEL_JOBS_KEY, {job.id: job})
+
+    results = await parallel_tools.cancel_parallel_jobs(agent, [job.id])  # type: ignore[arg-type]
+    payload = json.loads(parallel_tools.format_parallel_results(results))
+
+    assert results[0]["state"] == "cancelled"
+    assert payload["status"] == "cancelled"
+    assert task.killed == 1
+    assert job.id not in agent.context.get_data(parallel_tools.PARALLEL_JOBS_KEY)
+
+
+@pytest.mark.asyncio
+async def test_parallel_remove_context_deletes_persisted_worker_chat(monkeypatch) -> None:
+    removed = []
+
+    from helpers import persist_chat
+
+    monkeypatch.setattr(persist_chat, "remove_chat", removed.append)
+
+    await parallel_tools._remove_context("missing-worker")
+
+    assert removed == ["missing-worker"]
+
+
+@pytest.mark.asyncio
+async def test_parallel_recursion_guard_allows_subordinate_children_but_blocks_tool_workers() -> None:
+    from extensions.python.tool_execute_before._20_block_parallel_recursion import (
+        BlockParallelRecursion,
+    )
+    from helpers.errors import RepairableException
+
+    agent = _FakeAgent()
+    agent.context.set_data(parallel_tools.PARALLEL_WORKER_JOB_KEY, "legacy-job")
+    assert parallel_tools.is_parallel_worker(agent) is True  # type: ignore[arg-type]
+
+    agent.context.set_data(parallel_tools.PARALLEL_WORKER_KIND_KEY, "subordinate")
+    assert parallel_tools.is_parallel_worker(agent) is False  # type: ignore[arg-type]
+    await BlockParallelRecursion(agent=agent).execute(tool_name="parallel")  # type: ignore[arg-type]
+
+    agent.context.set_data(parallel_tools.PARALLEL_WORKER_KIND_KEY, "tool")
+    assert parallel_tools.is_parallel_worker(agent) is True  # type: ignore[arg-type]
+    with pytest.raises(RepairableException, match="cannot be used inside a parallel worker"):
+        await BlockParallelRecursion(agent=agent).execute(tool_name="parallel")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

@@ -20,6 +20,8 @@ const EXTENSIONS_ROOT = "/a0/usr/_browser/extensions";
 const BROWSER_SUBSCRIBE_TIMEOUT_MS = 60000;
 const BROWSER_FIRST_INSTALL_TIMEOUT_MS = 300000;
 const BROWSER_CONFIG_REFRESH_MS = 15000;
+const BROWSER_VIEWER_TRANSPORT_SNAPSHOT = "snapshot";
+const BROWSER_VIEWER_TRANSPORT_SCREENCAST = "screencast";
 const VIEWPORT_SYNC_DEBOUNCE_MS = 220;
 const VIEWPORT_SYNC_SIZE_TOLERANCE = 4;
 const CANVAS_VIEWPORT_SETTLE_MS = 520;
@@ -123,6 +125,8 @@ const model = {
   address: "",
   frameSrc: "",
   frameState: null,
+  viewerTransport: BROWSER_VIEWER_TRANSPORT_SCREENCAST,
+  liveScreencastEnabled: true,
   annotating: false,
   annotationComments: [],
   annotationDraft: null,
@@ -885,10 +889,40 @@ const model = {
     if (!this.isCurrentSurfaceOpen(sequence)) {
       return;
     }
-    await this.syncViewport(true, { restartStream: this._mode === "canvas" });
+    await this.syncViewport(true, {
+      restartStream: this._mode === "canvas" && this.usesScreencastTransport(),
+    });
     if (this._mode !== "canvas") return;
     this.scheduleViewportSyncForSurface(sequence, 240);
     this.scheduleViewportSyncForSurface(sequence, 520);
+  },
+
+  requestedViewerTransport() {
+    return this.liveScreencastEnabled
+      ? BROWSER_VIEWER_TRANSPORT_SCREENCAST
+      : BROWSER_VIEWER_TRANSPORT_SNAPSHOT;
+  },
+
+  normalizeViewerTransport(value = "") {
+    const normalized = String(value || "").trim().toLowerCase().replace("-", "_");
+    if (normalized === BROWSER_VIEWER_TRANSPORT_SCREENCAST) {
+      return BROWSER_VIEWER_TRANSPORT_SCREENCAST;
+    }
+    return BROWSER_VIEWER_TRANSPORT_SNAPSHOT;
+  },
+
+  usesScreencastTransport() {
+    return this.viewerTransport === BROWSER_VIEWER_TRANSPORT_SCREENCAST;
+  },
+
+  frameDimensionsFromMetadata(metadata = null) {
+    if (!metadata || typeof metadata !== "object") return null;
+    const width = Number(metadata.expectedWidth || metadata.deviceWidth || metadata.jpegWidth || 0);
+    const height = Number(metadata.expectedHeight || metadata.deviceHeight || metadata.jpegHeight || 0);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    return { width, height };
   },
 
   scheduleViewportSyncForSurface(sequence, delayMs = 0) {
@@ -951,6 +985,7 @@ const model = {
           browser_id: requestedBrowserId,
           viewer_id: viewerToken,
           create_browser: Boolean(options.createBrowser || options.create_browser),
+          viewer_transport: this.requestedViewerTransport(),
           viewport_width: initialViewport?.width,
           viewport_height: initialViewport?.height,
         },
@@ -973,6 +1008,7 @@ const model = {
     }
     const data = firstOk(response);
     this.applyBrowserListing(data.browsers || [], contextId, { replaceAll: Boolean(data.all_browsers) });
+    this.viewerTransport = this.normalizeViewerTransport(data.viewer_transport);
     this.setActiveBrowserId(
       data.active_browser_id || requestedBrowserId || this.activeBrowserId || null,
       data.active_browser_context_id || contextId,
@@ -987,6 +1023,9 @@ const model = {
       const frameHandler = ({ data }) => {
         if (data?.context_id !== this.contextId) return;
         if (data?.viewer_id && data.viewer_id !== this._viewerToken) return;
+        if (data?.viewer_transport) {
+          this.viewerTransport = this.normalizeViewerTransport(data.viewer_transport);
+        }
         const incomingContextId = this.normalizeContextId(data.context_id || this.contextId);
         const incomingBrowserId = this.normalizeBrowserId(data.browser_id || data.state?.id);
         this.applyBrowserListing(data.browsers || [], incomingContextId, { replaceContext: true });
@@ -1011,6 +1050,7 @@ const model = {
           this.queueFrameRender(`data:${data.mime || "image/jpeg"};base64,${data.image}`, {
             browserId: frameBrowserId,
             contextId: incomingContextId,
+            dimensions: this.frameDimensionsFromMetadata(data.metadata),
             onAccepted: () => {
               if (
                 this.sameBrowserId(this.switchingBrowserId, frameBrowserId)
@@ -1041,6 +1081,9 @@ const model = {
 	      const stateHandler = ({ data }) => {
 	        if (data?.context_id !== this.contextId) return;
 	        if (data?.viewer_id && data.viewer_id !== this._viewerToken) return;
+	        if (data?.viewer_transport) {
+	          this.viewerTransport = this.normalizeViewerTransport(data.viewer_transport);
+	        }
         const commandContextId = this.normalizeContextId(data.active_browser_context_id || data.context_id || this.contextId);
         this.applyBrowserListing(data.browsers || [], commandContextId, { replaceAll: Boolean(data.all_browsers) });
         const command = String(data.command || "").toLowerCase();
@@ -1109,7 +1152,7 @@ const model = {
       }
       return;
     }
-    const dimensions = await loadFrameDimensions(frameSrc);
+    const dimensions = options?.dimensions || await loadFrameDimensions(frameSrc);
     if (sequence !== this._frameRenderSequence || surfaceSequence !== this._surfaceOpenSequence) {
       return;
     }
@@ -1254,12 +1297,14 @@ const model = {
           context_id: targetContextId,
           browser_id: targetBrowserId,
           viewer_id: this._viewerToken,
+          viewer_transport: this.requestedViewerTransport(),
           command,
         },
         { timeoutMs: 20000 },
       );
       const data = firstOk(response);
       this.applyBrowserListing(data.browsers || [], targetContextId, { replaceAll: Boolean(data.all_browsers) });
+      this.viewerTransport = this.normalizeViewerTransport(data.viewer_transport);
       const result = data.result || {};
       const resultContextId = this.normalizeContextId(
         result.context_id
@@ -1317,6 +1362,9 @@ const model = {
   },
 
   async restartCanvasStreamAfterPageChange() {
+    if (!this.usesScreencastTransport()) {
+      return;
+    }
     const surfaceSequence = this._surfaceOpenSequence;
     if (this._mode !== "canvas" || !this.isCurrentSurfaceOpen(surfaceSequence) || !this.activeBrowserId) {
       return;
@@ -2340,7 +2388,7 @@ const model = {
         input_type: "viewport",
         width: viewport.width,
         height: viewport.height,
-        restart_stream: restartStream,
+        restart_stream: restartStream && this.usesScreencastTransport(),
       });
       this._lastViewportKey = key;
       this._lastViewport = {
@@ -2516,6 +2564,7 @@ const model = {
     this._connectSequence += 1;
     this._viewerToken = "";
     this.switchingBrowserId = null;
+    this.viewerTransport = this.requestedViewerTransport();
     this._surfaceMounted = false;
     this._surfaceSwitching = false;
     this.commandInFlight = false;

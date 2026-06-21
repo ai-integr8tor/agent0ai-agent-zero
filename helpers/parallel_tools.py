@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 PARALLEL_JOBS_KEY = "_parallel_jobs"
 PARALLEL_WORKER_PARENT_CONTEXT_KEY = "_parallel_parent_context_id"
 PARALLEL_WORKER_JOB_KEY = "_parallel_job_id"
+PARALLEL_WORKER_KIND_KEY = "_parallel_worker_kind"
 
 CHILD_PARENT_CONTEXT_ID_KEY = "parent_context_id"
 CHILD_PARENT_CONTEXT_KIND_KEY = "parent_context_kind"
@@ -30,6 +31,7 @@ CHILD_PARALLEL_TOOL_NAME_KEY = "parallel_tool_name"
 DEFAULT_MAX_CALLS = 8
 DEFAULT_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 0.5
+DISALLOWED_PARALLEL_TOOLS = {"document_query"}
 
 TERMINAL_STATES = {"success", "error", "cancelled", "timeout"}
 JobState = Literal["pending", "running", "success", "error", "cancelled", "timeout"]
@@ -92,6 +94,10 @@ def normalize_parallel_tool_calls(raw_calls: Any) -> list[NormalizedToolCall]:
 
         if tool_name == "parallel":
             raise ValueError("`parallel` cannot be nested inside another `parallel` call.")
+        if tool_name in DISALLOWED_PARALLEL_TOOLS:
+            raise ValueError(
+                f"`{tool_name}` cannot be used inside `parallel`; call it sequentially."
+            )
 
         calls.append(
             NormalizedToolCall(
@@ -139,11 +145,20 @@ def coerce_timeout(value: Any) -> int:
     return timeout
 
 
-def is_parallel_worker(agent: "Agent | None") -> bool:
+def _parallel_worker_kind(agent: "Agent | None") -> JobKind | None:
     context = getattr(agent, "context", None)
     if not context:
-        return False
-    return bool(context.get_data(PARALLEL_WORKER_JOB_KEY))
+        return None
+    kind = context.get_data(PARALLEL_WORKER_KIND_KEY)
+    if kind in {"tool", "subordinate"}:
+        return kind
+    if context.get_data(PARALLEL_WORKER_JOB_KEY):
+        return "tool"
+    return None
+
+
+def is_parallel_worker(agent: "Agent | None") -> bool:
+    return _parallel_worker_kind(agent) == "tool"
 
 
 def _jobs_for_context(context: "AgentContext") -> dict[str, ParallelJob]:
@@ -209,12 +224,14 @@ async def await_parallel_jobs(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     *,
     collect: bool = True,
+    wait: bool = True,
 ) -> list[dict[str, Any]]:
     if not job_ids:
         raise ValueError("No `job_ids` were provided to await.")
 
     deadline = time.time() + timeout
     known_job_ids = set(job_ids)
+    wait_timed_out_job_ids: set[str] = set()
     while True:
         await refresh_parallel_jobs(agent)
         jobs = [_jobs_for_context(agent.context).get(job_id) for job_id in job_ids]
@@ -223,12 +240,11 @@ async def await_parallel_jobs(
             raise ValueError(f"Unknown parallel job id(s): {', '.join(missing)}")
 
         active = [job for job in jobs if job and job.state not in TERMINAL_STATES]
-        if not active:
+        if not wait or not active:
             break
 
         if time.time() >= deadline:
-            for job in active:
-                await _timeout_job(job)
+            wait_timed_out_job_ids = {job.id for job in active}
             break
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -237,7 +253,10 @@ async def await_parallel_jobs(
     for job_id in job_ids:
         job = _jobs_for_context(agent.context).get(job_id)
         if job:
-            snapshots.append(_job_snapshot(job, include_result=True))
+            snapshot = _job_snapshot(job, include_result=True)
+            if job.id in wait_timed_out_job_ids and job.state not in TERMINAL_STATES:
+                snapshot["wait_timed_out"] = True
+            snapshots.append(snapshot)
 
     if collect:
         for job_id in known_job_ids:
@@ -338,8 +357,14 @@ def format_started_jobs(jobs: list[ParallelJob]) -> str:
 
 def format_parallel_results(results: list[dict[str, Any]]) -> str:
     states = [result.get("state") for result in results]
-    if states and all(state == "success" for state in states):
+    has_active_jobs = any(state not in TERMINAL_STATES for state in states)
+    wait_timed_out = any(result.get("wait_timed_out") for result in results)
+    if has_active_jobs:
+        status = "waiting" if wait_timed_out else "running"
+    elif states and all(state == "success" for state in states):
         status = "success"
+    elif states and all(state == "cancelled" for state in states):
+        status = "cancelled"
     elif any(state == "success" for state in states):
         status = "partial"
     else:
@@ -349,6 +374,13 @@ def format_parallel_results(results: list[dict[str, Any]]) -> str:
         "status": status,
         "jobs": results,
     }
+    if wait_timed_out:
+        payload["wait_timeout"] = True
+    if has_active_jobs:
+        payload["instruction"] = (
+            "Some jobs are still running. Call `parallel` with `action: \"await\"` "
+            "and the listed `job_ids` to wait again, or `action: \"cancel\"` to stop them."
+        )
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
@@ -399,6 +431,7 @@ async def _run_subordinate_context_job(parent_context_id: str, job: ParallelJob)
 
     worker_context.set_data(PARALLEL_WORKER_PARENT_CONTEXT_KEY, parent_context.id)
     worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
+    worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_ID_KEY, parent_context.id)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_KIND_KEY, "parallel")
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_LABEL_KEY, child_name)
@@ -441,6 +474,7 @@ async def _run_direct_tool_job(parent_context_id: str, job: ParallelJob) -> str:
         )
         worker_context.set_data(PARALLEL_WORKER_PARENT_CONTEXT_KEY, parent_context_id)
         worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
+        worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
         job.worker_context_id = worker_context.id
         _copy_project(parent_context, worker_context)
 
@@ -503,10 +537,6 @@ async def execute_tool_call(agent: "Agent", tool_name: str, tool_args: dict[str,
         agent.loop_data.current_tool = None
 
 
-async def _timeout_job(job: ParallelJob) -> None:
-    await _cancel_job(job, state="timeout", message="Parallel job timed out.")
-
-
 async def _cancel_job(
     job: ParallelJob,
     *,
@@ -540,6 +570,7 @@ async def _remove_context(context_id: str | None) -> None:
     if not context_id:
         return
     from agent import AgentContext
+    from helpers import persist_chat
 
     context = AgentContext.get(context_id)
     if context:
@@ -548,6 +579,7 @@ async def _remove_context(context_id: str | None) -> None:
         except Exception:
             pass
         AgentContext.remove(context_id)
+    persist_chat.remove_chat(context_id)
 
 
 def _log_parallel_child_started(agent: "Agent", job: ParallelJob) -> None:
@@ -631,7 +663,6 @@ def _subordinate_worker_system_prompt(profile: str) -> str:
     lines = [
         "You are running as an isolated parallel worker for a parent Agent Zero chat.",
         "Return a concise final textual summary for the parent. Artifacts and files are supplementary, not a substitute for the textual result.",
-        "Do not call the `parallel` tool from this worker.",
     ]
     if profile:
         lines.append(f"Act with the `{profile}` profile's expertise and priorities.")

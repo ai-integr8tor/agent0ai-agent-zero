@@ -61,7 +61,8 @@
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `TypeVar`, `files.get_abs_path`, `dotenv.get_dotenv_value`, `opts.insert`, `str.strip`, `_is_valid_timezone`, `str.strip.lower`, `_normalize_timezone_setting`, `SettingsOutput`, `get_default_settings`, `_ensure_option_present`, `_resolve_runtime_timezone`, `get_default_secrets_manager`, `get_settings`, `normalize_settings`, `_load_sensitive_settings`, `settings.copy`, `_write_settings_file`, `reload_settings`, `set_settings`.
+- Important called helpers/classes observed in the source: `TypeVar`, `files.get_abs_path`, `dotenv.get_dotenv_value`, `opts.insert`, `str.strip`, `_is_valid_timezone`, `str.strip.lower`, `_normalize_timezone_setting`, `SettingsOutput`, `get_default_settings`, `_ensure_option_present`, `_resolve_runtime_timezone`, `get_default_secrets_manager`, `get_settings`, `normalize_settings`, `_load_sensitive_settings`, `settings.copy`, `_write_settings_file`, `reload_settings`, `set_settings`, `initialize_agent`.
+- Applying settings refreshes active context configs while preserving each subordinate agent's own profile.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -82,6 +83,7 @@
   - `tests/test_model_config_api_keys.py`
   - `tests/test_model_config_project_presets.py`
   - `tests/test_oauth_static.py`
+  - `tests/test_subagent_profiles.py`
 
 ## Child DOX Index
 

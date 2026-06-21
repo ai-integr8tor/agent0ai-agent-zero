@@ -274,5 +274,231 @@ def test_provider_key_modes_for_local_and_ollama_cloud():
 
     assert model_config.provider_requires_api_key("ollama") is False
     assert model_config.provider_requires_api_key("lm_studio") is False
+    assert model_config.provider_requires_api_key("llama_cpp") is False
+    assert model_config.provider_requires_api_key("omlx") is False
+    assert model_config.provider_requires_api_key("vllm") is False
     assert model_config.provider_requires_api_key("other") is False
     assert model_config.provider_requires_api_key("ollama_cloud") is True
+    assert "llama_cpp" in missing_key_banner.MissingApiKeyCheck.LOCAL_PROVIDERS
+    assert "omlx" in missing_key_banner.MissingApiKeyCheck.LOCAL_PROVIDERS
+    assert "vllm" in missing_key_banner.MissingApiKeyCheck.LOCAL_PROVIDERS
+
+
+def test_local_provider_defaults_are_docker_friendly():
+    import yaml
+
+    provider_path = PROJECT_ROOT / "conf" / "model_providers.yaml"
+    provider_config = yaml.safe_load(provider_path.read_text(encoding="utf-8"))
+
+    assert provider_config["chat"]["lm_studio"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:1234/v1"
+    )
+    assert provider_config["chat"]["lm_studio"]["kwargs"]["api_key"] == "lm-studio"
+    assert provider_config["chat"]["lm_studio"]["models_list"]["default_base"] == (
+        "http://host.docker.internal:1234"
+    )
+    assert provider_config["chat"]["llama_cpp"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["chat"]["llama_cpp"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8080/v1"
+    )
+    assert provider_config["chat"]["llama_cpp"]["kwargs"]["api_key"] == "llama-cpp"
+    assert provider_config["chat"]["llama_cpp"]["models_list"]["default_base"] == (
+        "http://host.docker.internal:8080"
+    )
+    assert provider_config["chat"]["llama_cpp"]["models_list"]["endpoint_url"] == "/v1/models"
+    assert provider_config["chat"]["ollama"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:11434"
+    )
+    assert provider_config["chat"]["ollama"]["models_list"]["default_base"] == (
+        "http://host.docker.internal:11434"
+    )
+    assert provider_config["chat"]["omlx"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["chat"]["omlx"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8000/v1"
+    )
+    assert provider_config["chat"]["omlx"]["kwargs"]["api_key"] == "omlx"
+    assert provider_config["chat"]["omlx"]["models_list"]["default_base"] == (
+        "http://host.docker.internal:8000"
+    )
+    assert provider_config["chat"]["omlx"]["models_list"]["endpoint_url"] == "/v1/models"
+    assert provider_config["chat"]["vllm"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["chat"]["vllm"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8000/v1"
+    )
+    assert provider_config["chat"]["vllm"]["kwargs"]["api_key"] == "vllm"
+    assert provider_config["chat"]["vllm"]["models_list"]["default_base"] == (
+        "http://host.docker.internal:8000"
+    )
+    assert provider_config["chat"]["vllm"]["models_list"]["endpoint_url"] == "/v1/models"
+    assert provider_config["embedding"]["lm_studio"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:1234/v1"
+    )
+    assert provider_config["embedding"]["lm_studio"]["kwargs"]["api_key"] == "lm-studio"
+    assert provider_config["embedding"]["llama_cpp"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["embedding"]["llama_cpp"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8080/v1"
+    )
+    assert provider_config["embedding"]["llama_cpp"]["kwargs"]["api_key"] == "llama-cpp"
+    assert provider_config["embedding"]["ollama"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:11434"
+    )
+    assert provider_config["embedding"]["omlx"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["embedding"]["omlx"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8000/v1"
+    )
+    assert provider_config["embedding"]["omlx"]["kwargs"]["api_key"] == "omlx"
+    assert provider_config["embedding"]["vllm"]["litellm_provider"] == "hosted_vllm"
+    assert provider_config["embedding"]["vllm"]["kwargs"]["api_base"] == (
+        "http://host.docker.internal:8000/v1"
+    )
+    assert provider_config["embedding"]["vllm"]["kwargs"]["api_key"] == "vllm"
+
+
+def test_local_provider_runtime_defaults_and_overrides(monkeypatch):
+    monkeypatch.setattr(models, "get_api_key", lambda provider: "None")
+
+    lm_chat = models.get_chat_model("lm_studio", "local-chat-model")
+    assert lm_chat.model_name == "lm_studio/local-chat-model"
+    assert lm_chat.kwargs["api_base"] == "http://host.docker.internal:1234/v1"
+    assert lm_chat.kwargs["api_key"] == "lm-studio"
+
+    lm_embedding = models.get_embedding_model("lm_studio", "nomic-embed-text")
+    assert lm_embedding.model_name == "lm_studio/nomic-embed-text"
+    assert lm_embedding.kwargs["api_base"] == "http://host.docker.internal:1234/v1"
+    assert lm_embedding.kwargs["api_key"] == "lm-studio"
+
+    custom_lm_embedding = models.get_embedding_model(
+        "lm_studio",
+        "nomic-embed-text",
+        api_base="http://127.0.0.1:1234/v1",
+        api_key="real-local-key",
+    )
+    assert custom_lm_embedding.kwargs["api_base"] == "http://127.0.0.1:1234/v1"
+    assert custom_lm_embedding.kwargs["api_key"] == "real-local-key"
+
+    llama_cpp_chat = models.get_chat_model("llama_cpp", "local-chat-model")
+    assert llama_cpp_chat.model_name == "hosted_vllm/local-chat-model"
+    assert llama_cpp_chat.kwargs["api_base"] == "http://host.docker.internal:8080/v1"
+    assert llama_cpp_chat.kwargs["api_key"] == "llama-cpp"
+
+    llama_cpp_embedding = models.get_embedding_model("llama_cpp", "local-embedding-model")
+    assert llama_cpp_embedding.model_name == "hosted_vllm/local-embedding-model"
+    assert llama_cpp_embedding.kwargs["api_base"] == "http://host.docker.internal:8080/v1"
+    assert llama_cpp_embedding.kwargs["api_key"] == "llama-cpp"
+
+    ollama_embedding = models.get_embedding_model("ollama", "nomic-embed-text")
+    assert ollama_embedding.model_name == "ollama/nomic-embed-text"
+    assert ollama_embedding.kwargs["api_base"] == "http://host.docker.internal:11434"
+    assert "api_key" not in ollama_embedding.kwargs
+
+    omlx_chat = models.get_chat_model("omlx", "local-chat-model")
+    assert omlx_chat.model_name == "hosted_vllm/local-chat-model"
+    assert omlx_chat.kwargs["api_base"] == "http://host.docker.internal:8000/v1"
+    assert omlx_chat.kwargs["api_key"] == "omlx"
+
+    omlx_embedding = models.get_embedding_model("omlx", "local-embedding-model")
+    assert omlx_embedding.model_name == "hosted_vllm/local-embedding-model"
+    assert omlx_embedding.kwargs["api_base"] == "http://host.docker.internal:8000/v1"
+    assert omlx_embedding.kwargs["api_key"] == "omlx"
+
+    custom_omlx_chat = models.get_chat_model(
+        "omlx",
+        "local-chat-model",
+        api_base="http://127.0.0.1:8000/v1",
+        api_key="real-local-key",
+    )
+    assert custom_omlx_chat.kwargs["api_base"] == "http://127.0.0.1:8000/v1"
+    assert custom_omlx_chat.kwargs["api_key"] == "real-local-key"
+
+    vllm_chat = models.get_chat_model("vllm", "local-chat-model")
+    assert vllm_chat.model_name == "hosted_vllm/local-chat-model"
+    assert vllm_chat.kwargs["api_base"] == "http://host.docker.internal:8000/v1"
+    assert vllm_chat.kwargs["api_key"] == "vllm"
+
+    vllm_embedding = models.get_embedding_model("vllm", "local-embedding-model")
+    assert vllm_embedding.model_name == "hosted_vllm/local-embedding-model"
+    assert vllm_embedding.kwargs["api_base"] == "http://host.docker.internal:8000/v1"
+    assert vllm_embedding.kwargs["api_key"] == "vllm"
+
+    custom_vllm_chat = models.get_chat_model(
+        "vllm",
+        "local-chat-model",
+        api_base="http://127.0.0.1:8001/v1",
+        api_key="real-local-key",
+    )
+    assert custom_vllm_chat.kwargs["api_base"] == "http://127.0.0.1:8001/v1"
+    assert custom_vllm_chat.kwargs["api_key"] == "real-local-key"
+
+
+def test_embedding_config_repairs_sentence_transformer_aliases(monkeypatch):
+    from plugins._model_config.helpers import model_config
+
+    cases = [
+        (
+            {"provider": "", "name": "sentence-transformers/all-MiniLM-L6-v2"},
+            ("huggingface", "sentence-transformers/all-MiniLM-L6-v2"),
+        ),
+        (
+            {"provider": "openai", "name": "sentence-transformers/all-MiniLM-L6-v2"},
+            ("huggingface", "sentence-transformers/all-MiniLM-L6-v2"),
+        ),
+        (
+            {
+                "provider": "other",
+                "name": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+            },
+            ("huggingface", "sentence-transformers/all-MiniLM-L6-v2"),
+        ),
+        (
+            {"provider": "huggingface", "name": "all-MiniLM-L6-v2"},
+            ("huggingface", "sentence-transformers/all-MiniLM-L6-v2"),
+        ),
+    ]
+
+    for raw_embedding, expected in cases:
+        monkeypatch.setattr(
+            model_config,
+            "get_config",
+            lambda *args, raw_embedding=raw_embedding, **kwargs: {
+                "embedding_model": raw_embedding
+            },
+        )
+        cfg = model_config.get_embedding_model_config_object()
+
+        assert (cfg.provider, cfg.name) == expected
+
+    monkeypatch.setattr(
+        model_config,
+        "get_config",
+        lambda *args, **kwargs: {
+            "embedding_model": {
+                "provider": "openai",
+                "name": "text-embedding-3-small",
+            }
+        },
+    )
+    cfg = model_config.get_embedding_model_config_object()
+
+    assert (cfg.provider, cfg.name) == ("openai", "text-embedding-3-small")
+
+    monkeypatch.setattr(
+        model_config,
+        "get_config",
+        lambda *args, **kwargs: {
+            "embedding_model": {
+                "provider": "openai",
+                "name": "sentence-transformers/all-MiniLM-L6-v2",
+            }
+        },
+    )
+    assert model_config.get_missing_api_key_providers() == []
+
+
+def test_docker_compose_maps_host_docker_internal_for_local_models():
+    import yaml
+
+    compose_path = PROJECT_ROOT / "docker" / "run" / "docker-compose.yml"
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    service = compose["services"]["agent-zero"]
+
+    assert "host.docker.internal:host-gateway" in service["extra_hosts"]

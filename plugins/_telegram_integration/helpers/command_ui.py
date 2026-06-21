@@ -413,7 +413,6 @@ async def _select_project(context: AgentContext, index: int, *, clear: bool = Fa
 async def _select_agent(context: AgentContext, index: int) -> None:
     if context.is_running():
         return
-    from agent import Agent
     from initialize import initialize_agent
 
     items = [item for item in subagents.get_all_agents_list() if item.get("key")]
@@ -422,10 +421,7 @@ async def _select_agent(context: AgentContext, index: int) -> None:
     profile = str(items[index]["key"])
     config = initialize_agent(override_settings={"agent_profile": profile})
     context.config = config
-    agent = context.agent0
-    while agent:
-        agent.config = config
-        agent = agent.get_data(Agent.DATA_NAME_SUBORDINATE)
+    context.agent0.config = config
     save_tmp_chat(context)
     mark_dirty_for_context(context.id, reason="telegram.agent_select")
 

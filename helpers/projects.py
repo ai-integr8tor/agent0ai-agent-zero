@@ -12,6 +12,7 @@ PROJECTS_PARENT_DIR = "usr/projects"
 PROJECT_META_DIR = ".a0proj"
 PROJECT_INSTRUCTIONS_DIR = "instructions"
 PROJECT_KNOWLEDGE_DIR = "knowledge"
+PROJECT_SKILLS_DIR = "skills"
 PROJECT_HEADER_FILE = "project.json"
 PROJECT_MCP_SERVERS_FILE = "mcp_servers.json"
 PROJECT_AGENTS_MD_FILES = ("AGENTS.md", "Agents.md", "agents.md")
@@ -273,6 +274,7 @@ def load_edit_project_data(name: str) -> EditProjectData:
     from helpers import git
     
     data = load_basic_project_data(name)
+    create_project_meta_folders(name)
     additional_instructions = get_additional_instructions_files(name)
     variables = load_project_variables(name)
     mcp_servers = load_project_mcp_servers(name)
@@ -638,6 +640,9 @@ def create_project_meta_folders(name: str):
 
     # create knowledge folders (plugins create their own subdirs lazily)
     files.create_dir(get_project_meta(name, PROJECT_KNOWLEDGE_DIR))
+
+    # create project skills folder for Project Settings > Skills > Open Folder
+    files.create_dir(get_project_meta(name, PROJECT_SKILLS_DIR))
 
 
 def get_knowledge_files_count(name: str):

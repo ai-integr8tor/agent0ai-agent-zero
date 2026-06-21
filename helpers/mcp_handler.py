@@ -43,10 +43,13 @@ from pydantic import BaseModel, Field, Discriminator, Tag, PrivateAttr
 from helpers import dirty_json, media_artifacts
 from helpers.print_style import PrintStyle
 from helpers.tool import Tool, Response
+from helpers.defer import DeferredTask
 
 
 MCP_MEDIA_TOKENS_ESTIMATE = 1500
 MAX_MCP_RESOURCE_TEXT_CHARS = 12_000
+MCP_SESSION_CLEANUP_TIMEOUT_SECONDS = 5.0
+MCP_OPERATION_TIMEOUT_GRACE_SECONDS = MCP_SESSION_CLEANUP_TIMEOUT_SECONDS + 2.0
 DEFAULT_MCP_SERVERS_CONFIG = '{\n    "mcpServers": {}\n}'
 
 
@@ -661,10 +664,10 @@ class MCPConfig(BaseModel):
 
     @classmethod
     def get_instance(cls) -> "MCPConfig":
-        # with cls.__lock:
-        if cls.__instance is None:
-            cls.__instance = cls(servers_list=[], config_scope="global")
-        return cls.__instance
+        with cls.__lock:
+            if cls.__instance is None:
+                cls.__instance = cls(servers_list=[], config_scope="global")
+            return cls.__instance
 
     @classmethod
     def clear_project_instances(cls):
@@ -791,35 +794,20 @@ class MCPConfig(BaseModel):
 
     @classmethod
     def update(cls, config_str: str) -> Any:
+        servers_data = cls.parse_config_string(config_str)
+        new_instance = cls(servers_list=servers_data, config_scope="global")
         with cls.__lock:
-            servers_data = cls.parse_config_string(config_str)
-
-            # Initialize/update the singleton instance with the (potentially empty) list of server data
-            instance = cls.get_instance()
-            # Directly update the servers attribute of the existing instance or re-initialize carefully
-            # For simplicity and to ensure __init__ logic runs if needed for setup:
-            new_instance_data = {
-                "servers": servers_data
-            }  # Prepare data for re-initialization or update
-
-            # Option 1: Re-initialize the existing instance (if __init__ is idempotent for other fields)
-            instance.__init__(servers_list=servers_data, config_scope="global")
+            # Build and initialize outside the class lock so a slow or wedged MCP
+            # server cannot freeze status reads, prompts, or later tool calls.
+            instance = cls.__instance
+            if instance is None:
+                instance = new_instance
+                cls.__instance = instance
+            else:
+                instance.servers = new_instance.servers
+                instance.disconnected_servers = new_instance.disconnected_servers
+                instance.config_scope = new_instance.config_scope
             cls.__project_instances = {}
-
-            # Option 2: Or, if __init__ has side effects we don't want to repeat,
-            # and 'servers' is the primary thing 'update' changes:
-            # instance.servers = [] # Clear existing servers first
-            # for server_item_data in servers_data:
-            #     try:
-            #         if server_item_data.get("url", None):
-            #             instance.servers.append(MCPServerRemote(server_item_data))
-            #         else:
-            #             instance.servers.append(MCPServerLocal(server_item_data))
-            #     except Exception as e_init:
-            #         PrintStyle(background_color="grey", font_color="red", padding=True).print(
-            #             f"MCPConfig.update: Failed to create MCPServer from item '{server_item_data.get('name', 'Unknown')}': {e_init}"
-            #         )
-
             cls.__initialized = True
             return instance
 
@@ -1146,11 +1134,15 @@ class MCPConfig(BaseModel):
     ) -> CallToolResult:
         """Call a tool with the given input data"""
         server_name_part, tool_name_part = _split_qualified_tool_name(tool_name)
+        matched_server = None
         with self.__lock:
             for server in self.servers:
                 if server.name == server_name_part and server.has_tool(tool_name_part):
-                    return await server.call_tool(tool_name_part, input_data)
+                    matched_server = server
+                    break
+        if matched_server is None:
             raise ValueError(f"Tool {tool_name} not found")
+        return await matched_server.call_tool(tool_name_part, input_data)
 
 
 T = TypeVar("T")
@@ -1169,6 +1161,49 @@ class MCPClientBase(ABC):
         self.error: str = ""
         self.log: List[str] = []
         self.log_file: Optional[TextIO] = None
+
+    def _operation_timeout_seconds(self, read_timeout_seconds: float) -> float:
+        try:
+            seconds = float(read_timeout_seconds)
+        except (TypeError, ValueError):
+            seconds = 60.0
+        if seconds <= 0:
+            seconds = 60.0
+        return seconds + MCP_OPERATION_TIMEOUT_GRACE_SECONDS
+
+    def _operation_thread_name(self, operation_name: str) -> str:
+        server_name = normalize_name(str(getattr(self.server, "name", "") or "server"))
+        return f"MCPClient-{server_name[:32] or 'server'}-{operation_name}-{uuid.uuid4().hex[:8]}"
+
+    async def _run_isolated_operation(
+        self,
+        operation_name: str,
+        operation: Callable[[], Awaitable[T]],
+        timeout_seconds: float,
+    ) -> T:
+        worker = DeferredTask(thread_name=self._operation_thread_name(operation_name))
+        timed_out = False
+        try:
+            return await asyncio.wait_for(
+                worker.execute_inside(operation),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            timed_out = True
+            message = (
+                f"MCPClientBase ({self.server.name} - {operation_name}): "
+                f"operation did not finish within {timeout_seconds:.1f}s; "
+                "abandoning the isolated worker so Agent Zero can continue."
+            )
+            PrintStyle.warning(message)
+            with self.__lock:
+                self.error = message
+            raise TimeoutError(message) from exc
+        finally:
+            if timed_out:
+                worker.kill(terminate_thread=False)
+            else:
+                worker.kill(terminate_thread=True)
 
     # Protected method
     @abstractmethod
@@ -1192,54 +1227,56 @@ class MCPClientBase(ABC):
         """
         operation_name = coro_func.__name__  # For logging
         # PrintStyle(font_color="cyan").print(f"MCPClientBase ({self.server.name}): Creating new session for operation '{operation_name}'...")
-        # Store the original exception outside the async block
         original_exception = None
+        result: T | None = None
+        has_result = False
+        temp_stack = AsyncExitStack()
         try:
-            async with AsyncExitStack() as temp_stack:
-                try:
+            stdio, write = await self._create_stdio_transport(temp_stack)
+            # PrintStyle(font_color="cyan").print(f"MCPClientBase ({self.server.name} - {operation_name}): Transport created. Initializing session...")
+            session = await temp_stack.enter_async_context(
+                ClientSession(
+                    stdio,  # type: ignore
+                    write,  # type: ignore
+                    read_timeout_seconds=timedelta(
+                        seconds=read_timeout_seconds
+                    ),
+                )
+            )
+            await session.initialize()
 
-                    stdio, write = await self._create_stdio_transport(temp_stack)
-                    # PrintStyle(font_color="cyan").print(f"MCPClientBase ({self.server.name} - {operation_name}): Transport created. Initializing session...")
-                    session = await temp_stack.enter_async_context(
-                        ClientSession(
-                            stdio,  # type: ignore
-                            write,  # type: ignore
-                            read_timeout_seconds=timedelta(
-                                seconds=read_timeout_seconds
-                            ),
-                        )
-                    )
-                    await session.initialize()
-
-                    result = await coro_func(session)
-
-                    return result
-                except Exception as e:
-                    # Store the original exception and raise a dummy exception
-                    excs = getattr(e, "exceptions", None)  # Python 3.11+ ExceptionGroup
-                    if excs:
-                        original_exception = excs[0]
-                    else:
-                        original_exception = e
-                    # Create a dummy exception to break out of the async block
-                    raise RuntimeError("Dummy exception to break out of async block")
+            result = await coro_func(session)
+            has_result = True
         except Exception as e:
-            # Check if this is our dummy exception
-            if original_exception is not None:
-                e = original_exception
-            # We have the original exception stored
+            excs = getattr(e, "exceptions", None)  # Python 3.11+ ExceptionGroup
+            if excs:
+                original_exception = excs[0]
+            else:
+                original_exception = e
+        try:
+            await asyncio.wait_for(
+                temp_stack.aclose(),
+                timeout=MCP_SESSION_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            PrintStyle.warning(
+                f"MCPClientBase ({self.server.name} - {operation_name}): "
+                f"session cleanup exceeded {MCP_SESSION_CLEANUP_TIMEOUT_SECONDS:.1f}s."
+            )
+        except Exception as cleanup_exception:
+            PrintStyle.warning(
+                f"MCPClientBase ({self.server.name} - {operation_name}): "
+                f"session cleanup failed: {type(cleanup_exception).__name__}: {cleanup_exception}"
+            )
+        if original_exception is not None:
             PrintStyle(
                 background_color="#AA4455", font_color="white", padding=False
             ).print(
-                f"MCPClientBase ({self.server.name} - {operation_name}): Error during operation: {type(e).__name__}: {e}"
+                f"MCPClientBase ({self.server.name} - {operation_name}): Error during operation: {type(original_exception).__name__}: {original_exception}"
             )
-            raise e  # Re-raise the original exception
-        # finally:
-        #     PrintStyle(font_color="cyan").print(
-        #         f"MCPClientBase ({self.server.name} - {operation_name}): Session and transport will be closed by AsyncExitStack."
-        #     )
-        # This line should ideally be unreachable if the try/except/finally logic within the 'async with' is exhaustive.
-        # Adding it to satisfy linters that might not fully trace the raise/return paths through async context managers.
+            raise original_exception
+        if has_result:
+            return cast(T, result)
         raise RuntimeError(
             f"MCPClientBase ({self.server.name} - {operation_name}): _execute_with_session exited 'async with' block unexpectedly."
         )
@@ -1270,9 +1307,13 @@ class MCPClientBase(ABC):
                 or current_settings.get("mcp_client_init_timeout", 10)
                 or 10
             )
-            await self._execute_with_session(
-                list_tools_op,
-                read_timeout_seconds=init_timeout,
+            await self._run_isolated_operation(
+                "update_tools",
+                lambda: self._execute_with_session(
+                    list_tools_op,
+                    read_timeout_seconds=init_timeout,
+                ),
+                timeout_seconds=self._operation_timeout_seconds(init_timeout),
             )
         except Exception as e:
             # e = eg.exceptions[0]
@@ -1339,10 +1380,17 @@ class MCPClientBase(ABC):
             return response
 
         try:
-            return await self._execute_with_session(
-                call_tool_op,
-                read_timeout_seconds=tool_timeout,
+            response = await self._run_isolated_operation(
+                "call_tool",
+                lambda: self._execute_with_session(
+                    call_tool_op,
+                    read_timeout_seconds=tool_timeout,
+                ),
+                timeout_seconds=self._operation_timeout_seconds(tool_timeout),
             )
+            with self.__lock:
+                self.error = ""
+            return response
         except Exception as e:
             # Error logged by _execute_with_session. Re-raise a specific error for the caller.
             PrintStyle(

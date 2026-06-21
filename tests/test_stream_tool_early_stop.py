@@ -710,6 +710,77 @@ def test_responses_request_normalizes_reasoning_and_orphan_tool_choice():
     assert "reasoning" not in request
 
 
+def test_chat_completions_kwargs_omit_empty_tools():
+    kwargs = litellm_transport.ChatCompletionsTransport.prepare_kwargs(
+        {
+            "tools": [],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+            "max_tokens": 8,
+        }
+    )
+
+    assert kwargs == {"max_tokens": 8}
+
+    kwargs = litellm_transport.ChatCompletionsTransport.prepare_kwargs(
+        {
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+            "tool_choice": "auto",
+        }
+    )
+
+    assert kwargs["tools"][0]["function"]["name"] == "lookup"
+    assert kwargs["tool_choice"] == "auto"
+
+
+def test_complete_falls_back_to_chat_when_responses_shim_sends_empty_tools(
+    monkeypatch,
+):
+    calls: list[str] = []
+
+    def fake_responses(*args, **kwargs):
+        calls.append("responses")
+        raise RuntimeError(
+            "Value error, `tools` must not be an empty array. "
+            "Either provide at least one tool or omit the field entirely."
+        )
+
+    def fake_completion(*args, **kwargs):
+        calls.append("chat")
+        assert kwargs["drop_params"] is True
+        assert "tools" not in kwargs
+        assert "tool_choice" not in kwargs
+        assert "parallel_tool_calls" not in kwargs
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    monkeypatch.setattr(litellm_transport, "responses", fake_responses)
+    monkeypatch.setattr(litellm_transport, "completion", fake_completion)
+
+    transport = litellm_transport.LiteLLMTransport(
+        model="hosted_vllm/qwen",
+        messages=[{"role": "user", "content": "hi"}],
+        kwargs={
+            "tools": [],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+            "max_tokens": 8,
+        },
+    )
+
+    parsed = transport.complete()
+
+    assert parsed["response_delta"] == "ok"
+    assert calls == ["responses", "chat"]
+
+
 def test_responses_request_adds_openai_prompt_cache_key_for_static_prefix():
     request = litellm_transport.ResponsesTransport.from_chat(
         [

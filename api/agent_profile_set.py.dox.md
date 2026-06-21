@@ -23,11 +23,12 @@
 - `SetAgentProfile` is an `ApiHandler`.
 - `SetAgentProfile` defines `process(...)`.
 - Observed side-effect areas: filesystem writes, settings/state persistence.
-- Imported dependency areas include: `agent`, `helpers`, `helpers.api`, `helpers.persist_chat`, `helpers.state_monitor_integration`, `initialize`.
+- Switching a chat profile updates the context and top-level agent profile only; existing subordinate agents keep their own profile configs.
+- Imported dependency areas include: `agent`, `helpers`, `helpers.api`, `helpers.persist_chat`, `helpers.state_monitor_integration`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `str.strip`, `context.is_running`, `_agent_profile_labels`, `initialize_agent`, `save_tmp_chat`, `mark_dirty_for_context`, `subagents.get_all_agents_list`, `Response`, `agent.get_data`.
+- Important called helpers/classes observed in the source: `str.strip`, `context.is_running`, `_agent_profile_labels`, `initialize_agent`, `context.agent0.config`, `save_tmp_chat`, `mark_dirty_for_context`, `subagents.get_all_agents_list`, `Response`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -39,7 +40,8 @@
 ## Verification
 
 - Run endpoint-specific or API/WebSocket tests for changed behavior; smoke-test browser callers when no focused test exists.
-- No direct test reference was found by name search; choose the nearest behavioral test or perform a focused smoke check.
+- Related tests observed by source search:
+  - `tests/test_subagent_profiles.py`
 
 ## Child DOX Index
 

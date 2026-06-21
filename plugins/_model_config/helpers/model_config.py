@@ -32,7 +32,7 @@ IMPLICIT_PRESET_SLOT_DEFAULTS = {
         "kwargs": {},
     },
 }
-LOCAL_PROVIDERS = {"ollama", "lm_studio"}
+LOCAL_PROVIDERS = {"ollama", "lm_studio", "llama_cpp", "omlx", "vllm"}
 LOCAL_EMBEDDING = {"huggingface"}
 _PROVIDER_METADATA_CACHE: dict | None = None
 
@@ -450,7 +450,25 @@ def get_utility_model_config(agent=None) -> dict:
 def get_embedding_model_config(agent=None) -> dict:
     """Get embedding model config."""
     cfg = get_config(agent)
-    return cfg.get("embedding_model", {})
+    model_cfg = deepcopy(cfg.get("embedding_model", {}))
+    provider = str(model_cfg.get("provider") or "").strip().lower()
+    name = str(model_cfg.get("name") or "").strip().strip('"').strip("'")
+
+    if provider:
+        model_cfg["provider"] = provider
+    if name:
+        model_cfg["name"] = name
+
+    if name.startswith("huggingface/sentence-transformers/"):
+        model_cfg["provider"] = "huggingface"
+        model_cfg["name"] = name.removeprefix("huggingface/")
+    elif name.startswith("sentence-transformers/") and provider in {"", "openai", "other"}:
+        model_cfg["provider"] = "huggingface"
+    elif provider == "huggingface" and name == "all-MiniLM-L6-v2":
+        model_cfg["name"] = "sentence-transformers/all-MiniLM-L6-v2"
+
+    return model_cfg
+
 
 def is_chat_override_allowed(agent=None) -> bool:
     """Check if per-chat model override is enabled."""
@@ -566,7 +584,7 @@ def get_missing_api_key_providers(agent=None) -> list[dict]:
     checks = [
         ("Chat Model", cfg.get("chat_model", {})),
         ("Utility Model", cfg.get("utility_model", {})),
-        ("Embedding Model", cfg.get("embedding_model", {})),
+        ("Embedding Model", get_embedding_model_config(agent)),
     ]
 
     for label, model_cfg in checks:

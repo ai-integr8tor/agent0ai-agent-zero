@@ -25,7 +25,7 @@ export const MORE_CLOUD_PROVIDER_IDS = [
   "other",
 ];
 
-export const LOCAL_PROVIDER_IDS = ["ollama", "lm_studio", "other"];
+export const LOCAL_PROVIDER_IDS = ["ollama", "lm_studio", "omlx", "llama_cpp", "vllm", "other"];
 
 export const ONBOARDING_PROVIDER_OVERRIDES = {
   a0_venice: {
@@ -126,6 +126,15 @@ export const ONBOARDING_PROVIDER_OVERRIDES = {
     model_list_autoload: true,
     short_description: "Run local models through LM Studio.",
   },
+  llama_cpp: {
+    logo: "/plugins/_onboarding/webui/assets/provider-logos/llama-cpp.svg",
+    setup_url: "https://github.com/ggml-org/llama.cpp",
+    docs_url: "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
+    default_api_base: "http://host.docker.internal:8080/v1",
+    api_key_mode: "none",
+    model_list_autoload: true,
+    short_description: "Run GGUF models with llama-server.",
+  },
   mistral: {
     logo: "https://mistral.ai/favicon.ico",
     setup_url: "https://console.mistral.ai/",
@@ -171,6 +180,24 @@ export const ONBOARDING_PROVIDER_OVERRIDES = {
     api_key_mode: "required",
     model_list_autoload: true,
     short_description: "Ollama cloud models through a hosted endpoint.",
+  },
+  omlx: {
+    logo: "/plugins/_onboarding/webui/assets/provider-logos/omlx.svg",
+    setup_url: "https://omlx.ai/",
+    docs_url: "https://github.com/jundot/omlx#readme",
+    default_api_base: "http://host.docker.internal:8000/v1",
+    api_key_mode: "none",
+    model_list_autoload: true,
+    short_description: "Apple Silicon local inference with MLX.",
+  },
+  vllm: {
+    logo: "/plugins/_onboarding/webui/assets/provider-logos/vllm.svg",
+    setup_url: "https://docs.vllm.ai/",
+    docs_url: "https://docs.vllm.ai/en/stable/serving/online_serving/",
+    default_api_base: "http://host.docker.internal:8000/v1",
+    api_key_mode: "none",
+    model_list_autoload: true,
+    short_description: "High-throughput local OpenAI-compatible serving.",
   },
   openai: {
     logo: "https://openai.com/favicon.ico",

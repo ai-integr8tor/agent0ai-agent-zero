@@ -17,6 +17,8 @@
 - `_is_within(child: Path, parent: Path) -> bool`
 - `_derive_namespace(source: Path) -> str`
 - `_candidate_skill_roots(source_dir: Path) -> List[Path]`: Heuristics to find likely skill roots inside a repo/pack:
+- `_safe_extract_zip(zip_path: Path, target: Path) -> None`
+- `extract_skills_zip(zip_path: Path, tmp_subdir: str=..., prefix: str=...) -> tuple[Path, Path]`: Extract a zip into a temp folder inside Agent Zero's tmp directory and return the scan/import root plus cleanup root.
 - `_unzip_to_temp_dir(zip_path: Path) -> Path`: Extract a zip into a temp folder under tmp/skill_imports (inside Agent Zero base dir).
 - `build_import_plan(source: Path, dest_root: Path, namespace: Optional[str]=...) -> Tuple[List[ImportPlanItem], Path]`: Build a copy plan for importing skills from a source folder.
 - `_resolve_conflict(dest: Path, policy: ConflictPolicy) -> Tuple[Path, bool]`: Returns (final_dest_path, should_copy).
@@ -32,11 +34,12 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, plugin state.
-- Imported dependency areas include: `__future__`, `dataclasses`, `helpers`, `helpers.skills`, `os`, `pathlib`, `shutil`, `tempfile`, `time`, `typing`, `zipfile`.
+- Imported dependency areas include: `__future__`, `dataclasses`, `helpers`, `helpers.skills`, `os`, `pathlib`, `shutil`, `stat`, `tempfile`, `time`, `typing`, `zipfile`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `dataclass`, `strip`, `plugins.is_dir`, `Path`, `base_tmp.mkdir`, `time.strftime`, `target.mkdir`, `_candidate_skill_roots`, `Path.expanduser`, `resolve_skills_destination_root`, `dest_root.mkdir`, `build_import_plan`, `ImportResult`, `child.resolve.relative_to`, `direct.is_dir`, `discover_skill_md_files`, `plugins.iterdir`, `files.get_abs_path`, `zipfile.ZipFile`, `z.extractall`.
+- Zip extraction rejects absolute paths, backslash paths, path traversal, and symlink entries before extraction.
+- Important called helpers/classes observed in the source: `dataclass`, `strip`, `plugins.is_dir`, `Path`, `base_tmp.mkdir`, `time.strftime`, `target.mkdir`, `_candidate_skill_roots`, `Path.expanduser`, `resolve_skills_destination_root`, `dest_root.mkdir`, `build_import_plan`, `ImportResult`, `child.resolve.relative_to`, `direct.is_dir`, `discover_skill_md_files`, `plugins.iterdir`, `files.get_abs_path`, `zipfile.ZipFile`, `archive.extractall`, `shutil.rmtree`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance

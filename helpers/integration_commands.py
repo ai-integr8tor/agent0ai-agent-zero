@@ -436,7 +436,6 @@ def _handle_model(context: "AgentContext", args: str) -> str:
 
 
 def _handle_agent(context: "AgentContext", args: str) -> str:
-    from agent import Agent
     from helpers import subagents
     from initialize import initialize_agent
 
@@ -468,10 +467,7 @@ def _handle_agent(context: "AgentContext", args: str) -> str:
 
     config = initialize_agent(override_settings={"agent_profile": profile})
     context.config = config
-    agent = context.agent0
-    while agent:
-        agent.config = config
-        agent = agent.get_data(Agent.DATA_NAME_SUBORDINATE)
+    context.agent0.config = config
     save_tmp_chat(context)
     mark_dirty_for_context(context.id, reason="integration_commands.agent_set")
     return f"Switched agent to {match.get('label') or profile}."

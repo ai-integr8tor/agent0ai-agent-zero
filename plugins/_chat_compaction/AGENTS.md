@@ -16,6 +16,7 @@
 ## Local Contracts
 
 - Preserve chat history integrity and persistence after compaction.
+- Backup JSON and transcript artifacts must remain UTF-8 writable when chat content contains malformed Unicode such as lone surrogates.
 - Keep generated summaries bounded by configured model and token limits.
 - Do not discard original context data unless the compaction flow explicitly owns that behavior.
 

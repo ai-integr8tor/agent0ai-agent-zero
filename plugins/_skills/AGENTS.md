@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- Own active and hidden skill configuration injected into prompt extras on each turn.
+- Own active and hidden skill configuration injected into prompt protocol on each turn.
 
 ## Ownership
 

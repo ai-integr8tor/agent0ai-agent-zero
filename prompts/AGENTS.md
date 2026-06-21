@@ -23,6 +23,7 @@
 
 - Read the rendering path before changing placeholders or filenames.
 - Prefer small prompt additions over broad rewrites when fixing a specific behavior.
+- Keep document/OCR routing explicit: image files, screenshots, scans, charts, photos, and diagrams should prefer vision tools when available, while `document_query` is for documents, large text-heavy files, and fallback OCR.
 - Update tests or snapshots when prompt budget, required sections, or generated system content changes.
 
 ## Verification

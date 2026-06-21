@@ -58,7 +58,7 @@ HOST_BROWSER_PROFILE_MODE_KEY = getattr(
     "host_browser_profile_mode",
 )
 get_browser_config = browser_config.get_browser_config
-_LOCAL_PROVIDERS = {"ollama", "lm_studio"}
+_LOCAL_PROVIDERS = {"ollama", "lm_studio", "llama_cpp", "omlx", "vllm"}
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 _SENSITIVE_ACTIONS = {"content", "detail", "evaluate", "screenshot", "screenshot_file"}
 _KEY_ALIASES = {

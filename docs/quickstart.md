@@ -141,7 +141,7 @@ Explains how to search, edit, delete, export, and curate memories before stale c
 
 ### [Open A0 Skills Guide](guides/skills.md)
 
-Shows the chat input **+** menu, the Skills selector, and how active skills are added to prompt extras.
+Shows the chat input **+** menu, the Skills selector, and how active skills are added to prompt protocol.
 
 ### [Open A0 Agent Profiles Guide](guides/agent-profiles.md)
 

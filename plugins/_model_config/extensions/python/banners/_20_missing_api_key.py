@@ -6,7 +6,7 @@ from plugins._model_config.helpers import model_config
 class MissingApiKeyCheck(Extension):
     """Check if API keys are configured for selected model providers."""
 
-    LOCAL_PROVIDERS = {"ollama", "lm_studio"}
+    LOCAL_PROVIDERS = {"ollama", "lm_studio", "llama_cpp", "omlx", "vllm"}
     CONFIGURE_MODEL_SETTINGS_LINK = (
         """<div class="onboarding-banner-btn-container" style="margin-top: 12px;">"""
         """<button class="btn btn-ok" onclick="window.openModal('/plugins/_onboarding/webui/onboarding.html');return false;">"""

@@ -26,19 +26,21 @@
   - `async serve_plugin_asset(self, plugin_name, asset_path)`
   - `async serve_extension_asset(self, asset_path)`
 - Top-level functions:
+- `_positive_int_env(name: str, default: int) -> int`
 - `configure_process_environment() -> None`
-- Notable constants/configuration names: `UPLOAD_LIMIT_BYTES`.
+- Notable constants/configuration names: `UPLOAD_LIMIT_BYTES`, `SOCKETIO_PING_INTERVAL_SECONDS`, `SOCKETIO_PING_TIMEOUT_SECONDS`, `A0_SOCKETIO_PING_INTERVAL_SECONDS`, `A0_SOCKETIO_PING_TIMEOUT_SECONDS`.
 
 ## Runtime Contracts
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
+- Socket.IO heartbeat defaults are intentionally longer than Engine.IO's short defaults so CLI sessions survive long prompt/context work; environment overrides must remain positive integers and fall back to source defaults when invalid.
 - Observed side-effect areas: filesystem reads, network calls, subprocess/runtime control, WebSocket state, plugin state, settings/state persistence, secret handling.
 - Imported dependency areas include: `asyncio`, `dataclasses`, `datetime`, `flask`, `helpers`, `helpers.api`, `helpers.extension`, `helpers.files`, `helpers.print_style`, `helpers.server_startup`, `helpers.ws`, `helpers.ws_manager`, `logging`, `os`, `secrets`, `socketio`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `logging.getLogger.setLevel`, `Localization.get.apply_process_timezone`, `field`, `Flask`, `threading.RLock`, `socketio.AsyncServer`, `WsManager`, `set_shared_ws_manager`, `cls`, `server_runtime.refresh_runtime_settings`, `settings_helper.get_settings`, `settings_helper.set_runtime_settings_snapshot`, `self.ws_manager.set_server_restart_broadcast`, `UiRouteHandlers`, `self.webapp.add_url_rule`, `register_api_route`, `register_ws_namespace`, `files.read_file`, `render_template_string`, `session.pop`.
+- Important called helpers/classes observed in the source: `logging.getLogger.setLevel`, `Localization.get.apply_process_timezone`, `_positive_int_env`, `field`, `Flask`, `threading.RLock`, `socketio.AsyncServer`, `WsManager`, `set_shared_ws_manager`, `cls`, `server_runtime.refresh_runtime_settings`, `settings_helper.get_settings`, `settings_helper.set_runtime_settings_snapshot`, `self.ws_manager.set_server_restart_broadcast`, `UiRouteHandlers`, `self.webapp.add_url_rule`, `register_api_route`, `register_ws_namespace`, `files.read_file`, `render_template_string`, `session.pop`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance

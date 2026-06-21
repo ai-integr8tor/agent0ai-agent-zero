@@ -96,7 +96,7 @@ When running in Docker, Agent Zero uses two distinct Python runtimes to isolate 
 ```
 
 Key Files:
-- agent.py: Defines AgentContext and the main Agent class.
+- agent.py: Defines AgentContext, LoopData virtual prompt areas (Protocol before history and Extras after history), and the main Agent class.
 - helpers/plugins.py: Plugin discovery and configuration logic.
 - webui/js/AlpineStore.js: Store factory for reactive frontend state.
 - helpers/api.py: Base class for all API endpoints.

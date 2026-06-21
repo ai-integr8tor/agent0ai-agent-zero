@@ -18,6 +18,7 @@
 ## Work Guidance
 
 - Update this skill when skill metadata, discovery, or validation behavior changes.
+- Keep frontmatter examples aligned with runtime-supported discovery fields such as `triggers`.
 - Keep examples concise and avoid duplicating long reference material in the skill body.
 
 ## Verification

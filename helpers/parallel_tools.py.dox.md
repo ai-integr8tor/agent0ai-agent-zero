@@ -23,8 +23,11 @@
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Wrapped tool-call items must use the same shape as normal tool calls: a tool name plus arguments.
-- `call_subordinate` jobs run in isolated child chat contexts tagged with parent-chat metadata; they must not be added to the scheduler task list.
+- Normalization accepts full agent-reply-shaped objects when `tool_name` and `tool_args` are present; non-contract planning fields such as `thoughts` or `headline` are ignored.
+- Normalization rejects `document_query` inside `parallel` because document parsing and Q&A fan out into heavier worker/model paths that must run sequentially.
+- `call_subordinate` jobs run in isolated child chat contexts tagged with parent-chat metadata; they must not be added to the scheduler task list and may use normal child-chat tools, including `parallel`.
 - Direct tool jobs run in isolated background contexts and are blocked from recursively invoking `parallel`.
+- Direct tool background context cleanup removes both the in-memory context and any transient chat folder left on disk.
 - Parent-visible child log items are created for each wrapped call so the WebUI can inspect concurrent children separately while the wrapper result remains model-history-only.
 - Child tool logs mirror normal tool-call visible args; job ids remain available through wrapper results and prompt extras rather than visible process-step args.
 - Job IDs are stable handles for later await, collect, or cancel operations.
@@ -33,7 +36,7 @@
 ## Key Concepts
 
 - The parent context stores in-flight jobs under a private data key; collected terminal jobs are removed from that registry.
-- `wait=True` starts jobs and awaits them before returning; `wait=False` returns job IDs immediately.
+- `wait=True` starts jobs and awaits them before returning until all requested jobs finish or the wait timeout is reached; the timeout stops waiting but does not cancel running jobs.
 - `collect` returns already-finished job results without waiting; `await` waits for requested job IDs.
 - Canceled jobs should be marked terminal and should stop their background `DeferredTask` when cancellation is possible.
 

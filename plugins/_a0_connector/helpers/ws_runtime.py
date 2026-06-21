@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import copy
+import json
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -14,6 +17,8 @@ class PendingFileOperation:
     loop: asyncio.AbstractEventLoop
     future: asyncio.Future[dict[str, Any]]
     context_id: str | None = None
+    chunk_count: int | None = None
+    chunks: dict[int, bytes] = field(default_factory=dict)
 
 
 @dataclass
@@ -570,7 +575,99 @@ def resolve_pending_file_op(
     sid: str,
     payload: dict[str, Any],
 ) -> bool:
+    if payload.get("chunked") is True:
+        return _resolve_pending_file_chunk(op_id, sid=sid, payload=payload)
     return _resolve_pending(_pending_file_ops, op_id, sid=sid, payload=payload)
+
+
+def _resolve_pending_file_chunk(
+    op_id: str,
+    *,
+    sid: str,
+    payload: dict[str, Any],
+) -> bool:
+    error = _validate_file_chunk_payload(payload)
+    if error:
+        return _fail_pending(
+            _pending_file_ops,
+            op_id,
+            sid=sid,
+            error=f"Invalid chunked file operation result: {error}",
+        )
+
+    chunk_index = int(payload["chunk_index"])
+    chunk_count = int(payload["chunk_count"])
+    encoded = str(payload.get("data") or "")
+    try:
+        chunk = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except (UnicodeEncodeError, binascii.Error) as exc:
+        return _fail_pending(
+            _pending_file_ops,
+            op_id,
+            sid=sid,
+            error=f"Invalid chunked file operation result: {exc}",
+        )
+
+    with _state_lock:
+        pending = _pending_file_ops.get(op_id)
+        if pending is None or pending.sid != sid:
+            return False
+
+        if pending.chunk_count is None:
+            pending.chunk_count = chunk_count
+        elif pending.chunk_count != chunk_count:
+            _pending_file_ops.pop(op_id, None)
+            pending.loop.call_soon_threadsafe(
+                _set_future_result,
+                pending.future,
+                {
+                    "op_id": op_id,
+                    "ok": False,
+                    "error": "Invalid chunked file operation result: chunk_count changed",
+                },
+            )
+            return True
+
+        pending.chunks[chunk_index] = chunk
+        if len(pending.chunks) < chunk_count:
+            return True
+
+        ordered = [pending.chunks[index] for index in range(chunk_count)]
+        _pending_file_ops.pop(op_id, None)
+
+    try:
+        assembled = b"".join(ordered).decode("utf-8")
+        result = json.loads(assembled)
+        if not isinstance(result, dict):
+            raise ValueError("decoded result is not an object")
+    except Exception as exc:
+        result = {
+            "op_id": op_id,
+            "ok": False,
+            "error": f"Invalid chunked file operation result: {exc}",
+        }
+
+    pending.loop.call_soon_threadsafe(_set_future_result, pending.future, result)
+    return True
+
+
+def _validate_file_chunk_payload(payload: dict[str, Any]) -> str:
+    if payload.get("encoding") != "json+base64":
+        return "encoding must be json+base64"
+
+    try:
+        chunk_index = int(payload.get("chunk_index"))
+        chunk_count = int(payload.get("chunk_count"))
+    except (TypeError, ValueError):
+        return "chunk_index and chunk_count must be integers"
+
+    if chunk_count <= 0:
+        return "chunk_count must be positive"
+    if chunk_index < 0 or chunk_index >= chunk_count:
+        return "chunk_index out of range"
+    if not isinstance(payload.get("data"), str):
+        return "data must be a string"
+    return ""
 
 
 def fail_pending_file_op(

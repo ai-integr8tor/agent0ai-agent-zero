@@ -209,7 +209,7 @@ class SkillsTool(Tool):
         loaded.append(skill.name)
         self.agent.data[DATA_NAME_LOADED_SKILLS] = loaded[-max_loaded_skills():]
 
-        return f"Loaded skill '{skill.name}' into EXTRAS."
+        return f"Loaded skill '{skill.name}' into Protocol."
 
     def _read_file(self, skill_name: str, file_path: str) -> str:
         if not skill_name:

@@ -17,6 +17,7 @@
 - Keep provider metadata and API-key checks safe around secrets.
 - Coordinate OAuth-backed providers with `_oauth` instead of hardcoding provider-specific auth here.
 - Applying a model preset may inherit durable tuning such as context windows and rate limits, but must replace or clear per-slot `kwargs` so provider-specific extra params never leak across model providers.
+- Repair provider-specific model-config aliases at the model-config read/build boundary; keep provider-specific repairs out of provider-agnostic core wrappers such as `models.py`.
 
 ## Work Guidance
 

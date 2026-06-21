@@ -20,6 +20,7 @@
 ## Work Guidance
 
 - Coordinate parser changes with timeout handling and fallback behavior.
+- Keep prompt and skill guidance clear that image files, screenshots, scans, charts, photos, and diagrams should go to vision tools first when available; `document_query` image OCR is a text-focused fallback when vision is unavailable or cannot read the needed text.
 
 ## Verification
 

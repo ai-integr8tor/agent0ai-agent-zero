@@ -572,18 +572,27 @@ def _apply_settings(previous: Settings | None, browser_timezone: str | None = No
     if _settings:
         _apply_timezone_setting(previous, browser_timezone)
 
-        from agent import AgentContext
+        from agent import Agent, AgentContext
         from initialize import initialize_agent
 
         for ctx in AgentContext.all():
-            profile = str(getattr(ctx.config, "profile", "") or _settings["agent_profile"])
-            config = initialize_agent(override_settings={"agent_profile": profile})
-            ctx.config = config  # reinitialize context config with new settings
-            # apply config to agents
+            profile = str(
+                getattr(ctx.config, "profile", "") or _settings["agent_profile"]
+            )
+            ctx.config = initialize_agent(override_settings={"agent_profile": profile})
             agent = ctx.agent0
             while agent:
-                agent.config = ctx.config
-                agent = agent.get_data(agent.DATA_NAME_SUBORDINATE)
+                agent_profile = str(
+                    getattr(getattr(agent, "config", None), "profile", "") or profile
+                )
+                agent.config = (
+                    ctx.config
+                    if agent is ctx.agent0 and agent_profile == profile
+                    else initialize_agent(
+                        override_settings={"agent_profile": agent_profile}
+                    )
+                )
+                agent = agent.get_data(Agent.DATA_NAME_SUBORDINATE)
 
         # update mcp settings if necessary
         if not previous or _settings["mcp_servers"] != previous["mcp_servers"]:

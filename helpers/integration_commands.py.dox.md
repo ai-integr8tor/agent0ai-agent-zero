@@ -31,10 +31,11 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem writes, model calls, plugin state, settings/state persistence.
 - Imported dependency areas include: `__future__`, `helpers`, `helpers.persist_chat`, `helpers.state_monitor_integration`, `plugins._model_config.helpers`, `re`, `typing`.
+- `/agent` switches the top-level chat profile and preserves existing subordinate agent profiles.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `splitlines`, `extract_command_line`, `line.partition`, `command.strip.lower`, `parse_command`, `mq.get_queue`, `args.strip.lower`, `mq.send_all_aggregated`, `mark_dirty_for_context`, `_strip_quotes`, `_match_named_item`, `projects.activate_project`, `model_config.is_chat_override_allowed`, `context.get_data`, `context.set_data`, `save_tmp_chat`, `str.strip`, `value.strip`, `value.lower.strip`, `re.sub`.
+- Important called helpers/classes observed in the source: `splitlines`, `extract_command_line`, `line.partition`, `command.strip.lower`, `parse_command`, `mq.get_queue`, `args.strip.lower`, `mq.send_all_aggregated`, `mark_dirty_for_context`, `_strip_quotes`, `_match_named_item`, `projects.activate_project`, `initialize_agent`, `model_config.is_chat_override_allowed`, `context.get_data`, `context.set_data`, `save_tmp_chat`, `str.strip`, `value.strip`, `value.lower.strip`, `re.sub`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -46,7 +47,8 @@
 ## Verification
 
 - Run targeted tests for changed helper behavior; run security regressions for auth, filesystem, WebSocket, tunnel, upload, or secret-handling helpers.
-- No direct test reference was found by name search; choose the nearest behavioral test or perform a focused smoke check.
+- Related tests observed by source search:
+  - `tests/test_subagent_profiles.py`
 
 ## Child DOX Index
 

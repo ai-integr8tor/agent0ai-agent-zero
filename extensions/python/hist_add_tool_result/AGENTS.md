@@ -12,6 +12,7 @@
 
 - Preserve tool result traceability without leaking secrets.
 - Keep file artifacts inside expected runtime/user-owned paths.
+- Skip BACKGROUND contexts; background workers must remain ephemeral and must not create chat message files.
 
 ## Work Guidance
 

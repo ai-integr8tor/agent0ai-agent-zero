@@ -59,6 +59,27 @@ def test_project_mcp_servers_reject_path_names(monkeypatch, tmp_path):
             raise AssertionError(f"Expected invalid project name: {name!r}")
 
 
+def test_project_creation_creates_skills_folder(monkeypatch, tmp_path):
+    _prepare_project_tree(monkeypatch, tmp_path)
+
+    projects.create_project("demo", {"title": "Demo"})
+
+    assert (tmp_path / "usr" / "projects" / "demo" / ".a0proj" / "skills").is_dir()
+
+
+def test_project_load_repairs_missing_skills_folder(monkeypatch, tmp_path):
+    _prepare_project_tree(monkeypatch, tmp_path)
+    meta = tmp_path / "usr" / "projects" / "demo" / ".a0proj"
+    meta.mkdir(parents=True)
+    (meta / "project.json").write_text('{"title": "Demo"}', encoding="utf-8")
+
+    assert not (meta / "skills").exists()
+
+    projects.load_edit_project_data("demo")
+
+    assert (meta / "skills").is_dir()
+
+
 def test_project_system_prompt_includes_root_agents_md_with_path(monkeypatch, tmp_path):
     _prepare_project_tree(monkeypatch, tmp_path)
     projects.create_project(

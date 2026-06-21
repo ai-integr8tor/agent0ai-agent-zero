@@ -48,19 +48,31 @@ class ParallelTool(Tool):
                     break_loop=False,
                 )
 
-            wait_default = action not in {"start", "background"}
+            wait_default = action not in {"start", "background", "collect"}
             wait = parallel_tools.coerce_bool(args.get("wait"), wait_default)
-            if action in {"await", "wait", "collect"}:
+            if action in {"await", "wait"}:
                 wait = True
 
             if not wait:
-                if not started_jobs:
+                if not started_jobs and not job_ids:
                     return Response(
                         message="Error: `wait: false` requires `tool_calls` to start new jobs.",
                         break_loop=False,
                     )
+                if not job_ids:
+                    return Response(
+                        message=parallel_tools.format_started_jobs(started_jobs),
+                        break_loop=False,
+                    )
+                results = await parallel_tools.await_parallel_jobs(
+                    self.agent,
+                    all_job_ids,
+                    timeout=timeout,
+                    collect=True,
+                    wait=False,
+                )
                 return Response(
-                    message=parallel_tools.format_started_jobs(started_jobs),
+                    message=parallel_tools.format_parallel_results(results),
                     break_loop=False,
                 )
 
@@ -69,6 +81,7 @@ class ParallelTool(Tool):
                 all_job_ids,
                 timeout=timeout,
                 collect=True,
+                wait=True,
             )
             return Response(
                 message=parallel_tools.format_parallel_results(results),

@@ -10,6 +10,10 @@ from helpers import files, subagents
 
 
 FUNCTION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+TOOL_NAME_EXAMPLE_PATTERN = re.compile(
+    r"""["']tool_name["']\s*:\s*["']([A-Za-z0-9_-]{1,64})["']"""
+)
+TOOL_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 TOOL_PROMPT_PREFIX = "agent.system.tool."
 TOOL_PROMPT_SUFFIX = ".md"
 MAX_TOOL_DESCRIPTION_CHARS = 1024
@@ -62,8 +66,8 @@ def _local_tool_prompts(agent: Any) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     for tool_file in tool_files:
         basename = os.path.basename(tool_file)
-        tool_name = _tool_name_from_prompt_basename(basename)
-        if not tool_name:
+        fallback_name = _tool_name_from_prompt_basename(basename)
+        if not fallback_name:
             continue
         try:
             prompt = agent.read_prompt(basename)
@@ -72,8 +76,22 @@ def _local_tool_prompts(agent: Any) -> list[tuple[str, str]]:
                 prompt = files.read_file(tool_file)
             except Exception:
                 prompt = ""
+        tool_name = _tool_name_from_prompt(prompt, fallback=fallback_name)
+        if not _include_local_tool_prompt(agent, tool_name):
+            continue
         result.append((tool_name, prompt))
     return result
+
+
+def _include_local_tool_prompt(agent: Any, tool_name: str) -> bool:
+    try:
+        from plugins._a0_connector.helpers.remote_tool_prompts import (
+            should_include_remote_tool_prompt,
+        )
+    except Exception:
+        return True
+
+    return should_include_remote_tool_prompt(agent, tool_name)
 
 
 def _mcp_tools(agent: Any) -> list[tuple[str, dict[str, Any]]]:
@@ -101,6 +119,28 @@ def _tool_name_from_prompt_basename(basename: str) -> str:
     if not name or name in {"tools", "tools_vision"}:
         return ""
     return name
+
+
+def _tool_name_from_prompt(prompt: str, *, fallback: str) -> str:
+    for match in TOOL_NAME_EXAMPLE_PATTERN.finditer(prompt or ""):
+        name = match.group(1).strip()
+        if FUNCTION_NAME_PATTERN.fullmatch(name):
+            return name
+
+    for match in TOOL_HEADING_PATTERN.finditer(prompt or ""):
+        name = _tool_name_from_heading(match.group(1))
+        if name:
+            return name
+
+    return fallback
+
+
+def _tool_name_from_heading(heading: str) -> str:
+    token = (heading or "").strip().split(None, 1)[0] if heading else ""
+    name = token.strip("`'\" :")
+    if FUNCTION_NAME_PATTERN.fullmatch(name):
+        return name
+    return ""
 
 
 def _native_tool_name(tool_name: str) -> str:

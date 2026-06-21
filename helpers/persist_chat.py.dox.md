@@ -28,6 +28,7 @@
 - `_serialize_agent(agent: Agent)`
 - `_serialize_log(log: Log)`
 - `_deserialize_context(data)`
+- `_deserialize_agent_config(agent_data: dict[str, Any], fallback_config: AgentConfig) -> AgentConfig`
 - `_deserialize_agents(agents: list[dict[str, Any]], config: AgentConfig, context: AgentContext) -> Agent`
 - `_deserialize_log(data: dict[str, Any]) -> 'Log'`
 - `_safe_json_serialize(obj, **kwargs)`
@@ -39,10 +40,13 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, settings/state persistence, scheduler state.
 - Imported dependency areas include: `agent`, `collections`, `datetime`, `helpers`, `helpers.localization`, `helpers.log`, `initialize`, `json`, `typing`, `uuid`.
+- Serialized chats store `agent_profile` both at the context level for the main chat and on each serialized agent so subordinate profiles survive server restart.
+- Deserialization must rebuild each agent with its serialized profile when present, falling back to the context profile for older chat files.
+- Chat loading skips directories that do not contain `chat.json`; malformed existing chat files still report load errors.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `datetime.fromtimestamp.isoformat`, `datetime.fromisoformat`, `files.get_abs_path`, `_get_chat_file_path`, `files.make_dirs`, `_serialize_context`, `_safe_json_serialize`, `files.write_file`, `_convert_v080_chats`, `files.list_files`, `get_chat_folder_path`, `files.delete_dir`, `get_chat_msg_files_folder`, `agent.history.serialize`, `initialize_agent`, `_deserialize_log`, `AgentContext`, `_deserialize_agents`, `Log`, `log.set_initial_progress`.
+- Important called helpers/classes observed in the source: `datetime.fromtimestamp.isoformat`, `datetime.fromisoformat`, `files.get_abs_path`, `_get_chat_file_path`, `files.make_dirs`, `_serialize_context`, `_safe_json_serialize`, `files.write_file`, `_convert_v080_chats`, `files.list_files`, `get_chat_folder_path`, `files.delete_dir`, `get_chat_msg_files_folder`, `agent.history.serialize`, `initialize_agent`, `_deserialize_log`, `AgentContext`, `_deserialize_agent_config`, `_deserialize_agents`, `Log`, `log.set_initial_progress`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -58,6 +62,7 @@
   - `tests/test_api_chat_lifetime.py`
   - `tests/test_browser_agent_regressions.py`
   - `tests/test_persist_chat_log_ids.py`
+  - `tests/test_subagent_profiles.py`
   - `tests/test_tool_action_contracts.py`
 
 ## Child DOX Index

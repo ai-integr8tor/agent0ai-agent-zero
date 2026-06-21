@@ -14,6 +14,9 @@
 - `Delegation` (`Tool`)
   - `async execute(self, message=..., reset=..., **kwargs)`
   - `get_log_object(self)`
+- Top-level functions:
+- `_subordinate_profile_labels(agent: Agent) -> dict[str, str]`
+- `_validate_subordinate_profile(agent: Agent, profile: str) -> str`
 
 ## Runtime Contracts
 
@@ -22,11 +25,13 @@
 - `Delegation` is a `Tool`.
 - `Delegation` defines `execute(...)`.
 - Observed side-effect areas: filesystem writes, settings/state persistence.
-- Imported dependency areas include: `agent`, `extensions.python.hist_add_tool_result`, `helpers.tool`, `initialize`.
+- `profile`/`agent_profile` values are validated against available profile keys before use; unknown profiles raise `RepairableException` so the agent can retry with a real profile.
+- Supplying a different profile for an existing subordinate without `reset=true` raises `RepairableException` instead of silently continuing the old subordinate.
+- Imported dependency areas include: `agent`, `extensions.python.hist_add_tool_result`, `helpers`, `helpers.errors`, `helpers.tool`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `self.agent.get_data`, `subordinate.hist_add_user_message`, `subordinate.history.new_topic`, `Response`, `self.agent.context.log.log`, `initialize_agent`, `Agent`, `sub.set_data`, `self.agent.set_data`, `UserMessage`, `subordinate.monologue`, `self.agent.read_prompt`, `str.lower.strip`, `str.lower`.
+- Important called helpers/classes observed in the source: `self.agent.get_data`, `projects.get_context_project_name`, `subagents.get_available_agents_dict`, `RepairableException`, `initialize_agent`, `subordinate.hist_add_user_message`, `subordinate.history.new_topic`, `Response`, `self.agent.context.log.log`, `Agent`, `sub.set_data`, `self.agent.set_data`, `UserMessage`, `subordinate.monologue`, `self.agent.read_prompt`, `str.lower.strip`, `str.lower`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -40,6 +45,7 @@
 - Run targeted tool and prompt-contract tests for changed behavior; smoke-test agent execution when no focused test exists.
 - Related tests observed by source search:
   - `tests/test_default_prompt_budget.py`
+  - `tests/test_subagent_profiles.py`
 
 ## Child DOX Index
 

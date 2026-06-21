@@ -67,7 +67,7 @@
 - `_split_qualified_tool_name(tool_name: str) -> tuple[str, str]`: Split `server.tool` names while preserving dots inside MCP tool names.
 - `_normalize_disabled_tools(value: Any) -> list[str]`: Normalize the optional per-server disabled tool list.
 - `initialize_mcp(mcp_servers_config: str)`
-- Notable constants/configuration names: `DEFAULT_MCP_SERVERS_CONFIG`, `MCP_MEDIA_TOKENS_ESTIMATE`, `MAX_MCP_RESOURCE_TEXT_CHARS`, `T`.
+- Notable constants/configuration names: `DEFAULT_MCP_SERVERS_CONFIG`, `MCP_MEDIA_TOKENS_ESTIMATE`, `MAX_MCP_RESOURCE_TEXT_CHARS`, `MCP_SESSION_CLEANUP_TIMEOUT_SECONDS`, `MCP_OPERATION_TIMEOUT_GRACE_SECONDS`, `T`.
 
 ## Runtime Contracts
 
@@ -81,13 +81,15 @@
 - MCP tool names are qualified as `server_name.tool_name`; server names are normalized without dots, and the tool portion may contain dots.
 - Servers may define `disabled_tools` as a list of MCP tool names. Disabled tools are omitted from agent-facing prompts, status counts, `has_tool`, and calls, while detail views can still retrieve them through `get_all_tools()` with a `disabled` flag so users can re-enable them.
 - Server-specific `init_timeout` and `tool_timeout` override global MCP client timeout settings for list-tools and call-tool operations.
+- MCP config locks must not be held across awaited server initialization or tool-call operations. Slow or wedged MCP servers must not block status reads, prompt construction, unrelated MCP servers, or later tool calls through the shared config lock.
+- MCP client session work runs inside disposable isolated `DeferredTask` workers with an outer timeout. Normal `AsyncExitStack` cleanup is also bounded; if cleanup or transport shutdown does not finish, the operation reports failure or warning while Agent Zero keeps control of the agent loop.
 - Server status marks initialized server objects with cached initialization errors as disconnected, even if the config object exists.
 - Observed side-effect areas: filesystem writes, network calls, WebSocket state, settings/state persistence, secret handling.
-- Imported dependency areas include: `abc`, `anyio.streams.memory`, `asyncio`, `contextlib`, `datetime`, `helpers`, `helpers.log`, `helpers.print_style`, `helpers.tool`, `httpx`, `json`, `mcp`, `mcp.client.sse`, `mcp.client.stdio`, `mcp.client.streamable_http`, `mcp.shared.message`.
+- Imported dependency areas include: `abc`, `anyio.streams.memory`, `asyncio`, `contextlib`, `datetime`, `helpers`, `helpers.defer`, `helpers.log`, `helpers.print_style`, `helpers.tool`, `httpx`, `json`, `mcp`, `mcp.client.sse`, `mcp.client.stdio`, `mcp.client.streamable_http`, `mcp.shared.message`.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `TypeVar`, `name.strip.lower`, `re.sub`, `Field`, `PrivateAttr`, `threading.Lock`, `_split_qualified_tool_name`, `config_dict.lower`, `server_type.lower`, `MCPConfig.get_instance.is_initialized`, `MCPConfig.get_for_agent`, `projects.validate_project_name`, `projects.load_project_mcp_servers`, `settings.get_settings`, `self.agent.context.log.log`, `str.strip`, `media_artifacts.guess_extension`, `callable`, `self._content_item_dump`, `join`, `Response`, `self.get_log_object`, `self._raw_tool_response`, `additional.pop`, `self._coerce_media_token_estimate`.
+- Important called helpers/classes observed in the source: `TypeVar`, `name.strip.lower`, `re.sub`, `Field`, `PrivateAttr`, `threading.Lock`, `DeferredTask`, `_split_qualified_tool_name`, `config_dict.lower`, `server_type.lower`, `MCPConfig.get_instance.is_initialized`, `MCPConfig.get_for_agent`, `projects.validate_project_name`, `projects.load_project_mcp_servers`, `settings.get_settings`, `self.agent.context.log.log`, `str.strip`, `media_artifacts.guess_extension`, `callable`, `self._content_item_dump`, `join`, `Response`, `self.get_log_object`, `self._raw_tool_response`, `additional.pop`, `self._coerce_media_token_estimate`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -95,6 +97,7 @@
 - Preserve public helper APIs used by core code and plugins unless every caller is updated.
 - Keep path, auth, secret, persistence, network, and subprocess behavior explicit and bounded.
 - Prefer adding cohesive helper functions here only when behavior is reused across modules.
+- Keep MCP timeout and cleanup changes covered by deterministic tests that do not require real MCP servers or network credentials.
 
 ## Verification
 

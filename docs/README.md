@@ -27,7 +27,7 @@ docs focus on practical setup, screenshots, and user workflows.
 - **[Desktop Guide](guides/desktop.md):** Use the built-in Linux desktop, GUI apps, and LibreOffice Writer/Calc/Impress Cowork.
 - **[A0 CLI Connector](guides/a0-cli-connector.md):** Terminal-first host connector for Agent Zero, with screenshots of the host picker, connected shell, command palette, and Browser modes.
 - **[Create a Small Plugin](guides/create-plugin.md):** Build and review a tiny Web UI plugin that adds an unread dot to the chat list.
-- **[Skills Guide](guides/skills.md):** Open the Skills selector, add active skills, and remove prompt extras you no longer need.
+- **[Skills Guide](guides/skills.md):** Open the Skills selector, add active skills, and remove prompt protocol entries you no longer need.
 - **[Agent Profiles](guides/agent-profiles.md):** Switch the current chat profile or create a new guided profile from the chat input.
 - **[Model Presets](guides/model-presets.md):** Create simple named shortcuts for model setups.
 - **[Memory Guide](guides/memory.md):** Search, edit, delete, and curate memories so useful context does not become stale noise.

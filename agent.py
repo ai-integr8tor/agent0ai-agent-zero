@@ -346,6 +346,8 @@ class LoopData:
         self.system = []
         self.user_message: history.Message | None = None
         self.history_output: list[history.OutputMessage] = []
+        self.protocol_temporary: OrderedDict[str, history.MessageContent] = OrderedDict()
+        self.protocol_persistent: OrderedDict[str, history.MessageContent] = OrderedDict()
         self.extras_temporary: OrderedDict[str, history.MessageContent] = OrderedDict()
         self.extras_persistent: OrderedDict[str, history.MessageContent] = OrderedDict()
         self.last_response = ""
@@ -591,24 +593,28 @@ class Agent:
         # concatenate system prompt
         system_text = "\n\n".join(loop_data.system)
 
-        # join extras
-        extras = history.Message(  # type: ignore[abstract]
-            False,
-            content=self.read_prompt(
-                "agent.context.extras.md",
-                extras=dirty_json.stringify(
-                    {**loop_data.extras_persistent, **loop_data.extras_temporary}
-                ),
-            ),
-        ).output()
+        # join protocol and extras
+        protocol = self._build_context_message(
+            "agent.context.protocol.md",
+            "protocol",
+            {**loop_data.protocol_persistent, **loop_data.protocol_temporary},
+            include_empty=False,
+        )
+        extras = self._build_context_message(
+            "agent.context.extras.md",
+            "extras",
+            {**loop_data.extras_persistent, **loop_data.extras_temporary},
+            include_empty=True,
+        )
+        loop_data.protocol_temporary.clear()
         loop_data.extras_temporary.clear()
 
-        # convert history + extras to LLM format
+        # convert protocol + history + extras to LLM format
         history_langchain: list[BaseMessage] = history.output_langchain(
-            loop_data.history_output + extras
+            protocol + loop_data.history_output + extras
         )
 
-        # build full prompt from system prompt, message history and extrS
+        # build full prompt from system prompt, protocol, message history and extras
         full_prompt: list[BaseMessage] = [
             SystemMessage(content=system_text),
             *history_langchain,
@@ -625,6 +631,24 @@ class Agent:
         )
 
         return full_prompt
+
+    def _build_context_message(
+        self,
+        prompt_file: str,
+        variable_name: str,
+        values: dict[str, history.MessageContent],
+        include_empty: bool,
+    ) -> list[history.OutputMessage]:
+        if not include_empty and not values:
+            return []
+
+        return history.Message(  # type: ignore[abstract]
+            False,
+            content=self.read_prompt(
+                prompt_file,
+                **{variable_name: dirty_json.stringify(values)},
+            ),
+        ).output()
 
     @extension.extensible
     async def handle_exception(self, location: str, exception: Exception):
@@ -931,9 +955,9 @@ class Agent:
                 model,
                 history_counter,
             )
-        call_data["responses_local_input_items"] = (
-            self._responses_static_prefix_items(model, messages)
-            + self._responses_input_items_since(model, 0)
+        call_data["responses_local_input_items"] = self._responses_prompt_input_items(
+            model,
+            messages,
         )
 
         await extension.call_extensions_async(
@@ -1025,18 +1049,12 @@ class Agent:
             return ResponsesTransport.input_from_messages(converted)
         return []
 
-    def _responses_static_prefix_items(
+    def _responses_prompt_input_items(
         self, model: Any, messages: list[BaseMessage]
     ) -> list[dict[str, Any]]:
-        prefix: list[BaseMessage] = []
-        for message in messages:
-            if isinstance(message, SystemMessage):
-                prefix.append(message)
-                continue
-            break
-        if not prefix or not hasattr(model, "_convert_messages"):
+        if not hasattr(model, "_convert_messages"):
             return []
-        converted = model._convert_messages(prefix)
+        converted = model._convert_messages(messages)
         return ResponsesTransport.input_from_messages(converted)
 
     def _remember_llm_result_state(

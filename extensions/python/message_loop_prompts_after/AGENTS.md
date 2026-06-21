@@ -2,11 +2,12 @@
 
 ## Purpose
 
-- Own prompt extras appended after primary message-loop prompt construction.
+- Own prompt protocol and extras appended around primary message-loop prompt construction.
 
 ## Ownership
 
 - Ordered Python files own current datetime, skill recall/load context, agent info, parallel job status, and workdir extras injection.
+- Loaded and active skill instructions belong in prompt protocol, not prompt extras.
 
 ## Local Contracts
 
@@ -16,11 +17,11 @@
 
 ## Work Guidance
 
-- Coordinate prompt-extra changes with skill, workdir, and profile contracts.
+- Coordinate prompt protocol and prompt-extra changes with skill, workdir, and profile contracts.
 
 ## Verification
 
-- Inspect rendered prompt extras or run prompt-construction tests after changes.
+- Inspect rendered prompt protocol/extras or run prompt-construction tests after changes.
 
 ## Child DOX Index
 

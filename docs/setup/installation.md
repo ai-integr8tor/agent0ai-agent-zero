@@ -438,6 +438,9 @@ Use the naming format required by your selected provider:
 | OpenAI | Model name only | `claude-sonnet-4-5` |
 | OpenRouter | Provider prefix mostly required | `anthropic/claude-sonnet-4-5` |
 | Ollama | Model name only | `gpt-oss:20b` |
+| oMLX | API-visible model name from `/v1/models` | `Qwen3-0.6B-4bit` |
+| llama.cpp | API-visible model name from `/v1/models` or `--alias` | `local-gguf` |
+| vLLM | Hugging Face model ID or served model alias | `Qwen/Qwen2.5-1.5B-Instruct` |
 
 > [!TIP]
 > If you see "Invalid model ID," verify the provider and naming format on the provider website, or search the web for "<name-of-ai-model> model naming".
@@ -458,6 +461,113 @@ Use the naming format required by your selected provider:
 
 - Reasoning can increase cost and latency. Some models perform better **without** reasoning.
 - If a model supports it, disable reasoning via provider-specific parameters (e.g., Venice `disable_thinking=true`).
+
+---
+
+## Installing and Using oMLX (Apple Silicon Local Models)
+
+oMLX is a local inference server for Apple Silicon Macs. It serves MLX models through an OpenAI-compatible API and supports chat, embeddings, and model listing endpoints.
+
+> [!NOTE]
+> oMLX requires Apple Silicon and macOS 15+. On 16 GB machines, start with small quantized MLX models.
+
+### macOS oMLX Installation
+
+**Using Homebrew:**
+
+```bash
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew install omlx
+omlx start
+```
+
+**Using the macOS App:**
+
+Download the oMLX app from the [official website](https://omlx.ai/) and follow the welcome flow to choose a model directory, start the server, and download or discover models.
+
+By default, oMLX serves its OpenAI-compatible API at `http://localhost:8000/v1`.
+
+To run a foreground server with oMLX's paged SSD cache enabled:
+
+```bash
+omlx serve --model-dir ~/.omlx/models --paged-ssd-cache-dir ~/.omlx/cache
+```
+
+### Configuring oMLX in Agent Zero
+
+1. Start oMLX and make sure at least one model is available in the oMLX dashboard or model directory.
+2. In Agent Zero Settings, choose **oMLX** as the Chat model, Utility model, or Embedding model provider.
+3. Use the model name shown by oMLX's model list or dashboard.
+4. Agent Zero includes Docker-friendly defaults for oMLX on the host at `http://host.docker.internal:8000/v1`. Override the API base URL only if your oMLX server runs somewhere else.
+5. Click `Save` to confirm your settings.
+
+> [!NOTE]
+> If Agent Zero runs in Docker and oMLX runs on the Mac host, ensure port **8000** is reachable from the container. The shipped Docker Compose file maps `host.docker.internal` to the host gateway for Linux Docker. Docker Desktop for macOS provides this hostname automatically.
+
+---
+
+## Installing and Using llama.cpp (GGUF Local Models)
+
+llama.cpp provides `llama-server`, a lightweight OpenAI-compatible HTTP server for GGUF models. Agent Zero talks to it through the same `/v1` API used by OpenAI-compatible clients.
+
+### macOS llama.cpp Installation
+
+**Using Homebrew:**
+
+```bash
+brew install llama.cpp
+```
+
+Start a server with a downloaded GGUF model:
+
+```bash
+llama-server -m ~/models/model.gguf --port 8080 --alias local-gguf
+```
+
+By default, Agent Zero expects llama.cpp at `http://host.docker.internal:8080/v1`. The model name can be the model path returned by `/v1/models`, but using `--alias` gives you a short stable name such as `local-gguf`.
+
+### Configuring llama.cpp in Agent Zero
+
+1. Start `llama-server` and confirm `http://localhost:8080/v1/models` returns your model.
+2. In Agent Zero Settings, choose **llama.cpp** as the Chat model, Utility model, or Embedding model provider.
+3. Use the model ID shown by `/v1/models`, or the alias you passed with `--alias`.
+4. Override the API base URL only if you started `llama-server` on another host or port.
+5. Click `Save` to confirm your settings.
+
+> [!NOTE]
+> If Agent Zero runs in Docker and cannot reach a host-side `llama-server`, start the server on an address Docker can reach, for example `--host 0.0.0.0`, and keep the port firewalled to trusted clients.
+
+---
+
+## Installing and Using vLLM (Local OpenAI-Compatible Serving)
+
+vLLM is a high-throughput local inference server with an OpenAI-compatible API. It is most common on Linux GPU hosts, and can also run on Apple Silicon through the vLLM Apple Silicon path or vLLM-Metal.
+
+For Apple Silicon Macs, install and activate vLLM-Metal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vllm-project/vllm-metal/main/install.sh | bash
+source ~/.venv-vllm-metal/bin/activate
+```
+
+Start a basic OpenAI-compatible server:
+
+```bash
+vllm serve Qwen/Qwen2.5-1.5B-Instruct --host 0.0.0.0 --port 8000
+```
+
+By default, Agent Zero expects vLLM at `http://host.docker.internal:8000/v1`, matching vLLM's default HTTP port. If another local provider already uses port 8000, start vLLM on another port and update Agent Zero's API base, for example `http://host.docker.internal:8001/v1`.
+
+### Configuring vLLM in Agent Zero
+
+1. Start vLLM and confirm `http://localhost:8000/v1/models` returns the served model.
+2. In Agent Zero Settings, choose **vLLM** as the Chat model, Utility model, or Embedding model provider.
+3. Use the model ID returned by vLLM's model list endpoint.
+4. If you started vLLM with `--api-key`, enter the same key in the advanced provider settings or environment.
+5. Click `Save` to confirm your settings.
+
+> [!NOTE]
+> vLLM serves one model at a time by default. Use a generation model for Chat and Utility slots, and a separate embedding-capable vLLM server if you want vLLM embeddings.
 
 ---
 
@@ -527,13 +637,13 @@ Replace `<model-name>` with the name of the model you want to use. For example: 
 1. Once you've downloaded your model(s), select it in the Settings page of the GUI.
 2. Within the Chat model, Utility model, or Embedding model section, choose **Ollama** as provider.
 3. Write your model code as expected by Ollama, in the format `llama3.2` or `qwen2.5:7b`
-4. Provide your API base URL to your Ollama API endpoint, usually `http://host.docker.internal:11434`
+4. Agent Zero includes Docker-friendly defaults for Ollama on the host at `http://host.docker.internal:11434`. Override the API base URL only if your Ollama server runs somewhere else.
 5. Click `Save` to confirm your settings.
 
 ![ollama](../res/setup/settings/4-local-models.png)
 
 > [!NOTE]
-> If Agent Zero runs in Docker and Ollama runs on the host, ensure port **11434** is reachable from the container. If both services are in the same Docker network, you can use `http://<container_name>:11434` instead of `host.docker.internal`.
+> If Agent Zero runs in Docker and Ollama runs on the host, ensure port **11434** is reachable from the container. The shipped Docker Compose file maps `host.docker.internal` to the host gateway for Linux Docker. If both services are in the same Docker network, you can use `http://<container_name>:11434` instead of `host.docker.internal`.
 
 ### Managing Downloaded Models
 

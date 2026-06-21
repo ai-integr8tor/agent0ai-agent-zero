@@ -1,4 +1,5 @@
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,32 @@ class _RecordingModel:
         if response_callback:
             await response_callback("done", "done")
         return f"summary-{len(self.user_messages)}", None
+
+
+def test_pre_compaction_backup_sanitizes_surrogate_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        compactor,
+        "get_chat_folder_path",
+        lambda _ctxid: str(tmp_path),
+    )
+    monkeypatch.setattr(
+        compactor,
+        "export_json_chat",
+        lambda _context: '{"content":"before\ud83dafter"}',
+    )
+
+    paths = compactor._save_pre_compaction_backup(
+        SimpleNamespace(id="surrogate-chat"),
+        "transcript before\ud83dafter",
+    )
+
+    json_backup = Path(paths["json"]).read_text(encoding="utf-8")
+    text_backup = Path(paths["txt"]).read_text(encoding="utf-8")
+
+    assert "\ud83d" not in json_backup
+    assert "\ud83d" not in text_backup
+    assert "before?after" in json_backup
+    assert "before?after" in text_backup
 
 
 def test_compaction_splitter_wraps_single_line_85k_payload(monkeypatch):

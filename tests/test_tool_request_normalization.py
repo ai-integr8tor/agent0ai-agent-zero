@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from helpers.extract_tools import extract_tool_request, normalize_tool_request
+from helpers import parallel_tools
 
 
 def test_normalize_tool_request_accepts_canonical_keys() -> None:
@@ -157,3 +158,31 @@ def test_extract_tool_request_prefers_later_valid_tool_object() -> None:
         {"tool_name":"response","tool_args":{"text":"done"}}
         """
     ) == {"tool_name": "response", "tool_args": {"text": "done"}}
+
+
+def test_normalize_parallel_tool_calls_accepts_full_agent_reply_shape() -> None:
+    calls = parallel_tools.normalize_parallel_tool_calls(
+        [
+            {
+                "thoughts": ["This is independent and ready to run."],
+                "headline": "Search Python release notes",
+                "tool_name": "search_engine",
+                "tool_args": {"query": "latest Python version changelog"},
+            }
+        ]
+    )
+
+    assert calls[0].tool_name == "search_engine"
+    assert calls[0].tool_args == {"query": "latest Python version changelog"}
+
+
+def test_parallel_prompt_encourages_mixed_independent_batches() -> None:
+    prompt = (PROJECT_ROOT / "prompts" / "agent.system.tool.parallel.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "same `tool_name` and `tool_args` shape as a top-level reply" in prompt
+    assert "planning fields like `thoughts` or `headline` are ignored" in prompt
+    assert "even when they use different tools" in prompt
+    assert "Do not split by tool type" in prompt
+    assert "Never include `document_query`" in prompt

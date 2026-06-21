@@ -16,6 +16,7 @@
 - Treat bot tokens, chat IDs, attachments, and user data as sensitive.
 - Keep allowed-user, group-mode, project, model, and `/send` controls enforced.
 - Install Telegram dependencies into the framework runtime only when required.
+- Agent profile picker actions change the top-level chat profile and must preserve existing subordinate agent profiles.
 
 ## Work Guidance
 

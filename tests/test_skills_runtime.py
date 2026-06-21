@@ -330,10 +330,60 @@ def test_renamed_skills_use_standard_frontmatter_only():
         expected_keys = {"name", "description"}
         if path.parent.name == "host-computer-use":
             expected_keys.update({"tags", "triggers"})
+        if path.parent.name in {"browser-automation", "browser-form-workflows"}:
+            expected_keys.add("triggers")
         assert set(frontmatter) == expected_keys
         assert frontmatter["name"] == path.parent.name
         assert frontmatter["description"]
         assert body
+
+
+def test_browser_skills_rank_for_browser_trigger_phrases(monkeypatch):
+    browser_automation = runtime.skill_from_markdown(
+        PROJECT_ROOT / "plugins" / "_browser" / "skills" / "browser-automation" / "SKILL.md"
+    )
+    browser_forms = runtime.skill_from_markdown(
+        PROJECT_ROOT / "plugins" / "_browser" / "skills" / "browser-form-workflows" / "SKILL.md"
+    )
+    document_query = runtime.skill_from_markdown(
+        PROJECT_ROOT / "plugins" / "_document_query" / "skills" / "document-query" / "SKILL.md"
+    )
+    host_computer = runtime.skill_from_markdown(
+        PROJECT_ROOT / "plugins" / "_a0_connector" / "skills" / "host-computer-use" / "SKILL.md"
+    )
+    assert browser_automation is not None
+    assert browser_forms is not None
+    assert document_query is not None
+    assert host_computer is not None
+    monkeypatch.setattr(
+        runtime,
+        "list_skills",
+        lambda *args, **kwargs: [
+            document_query,
+            host_computer,
+            browser_forms,
+            browser_automation,
+        ],
+    )
+
+    browser_queries = (
+        "open this URL in my browser and take a screenshot",
+        "interact with a JavaScript page and verify it visually",
+        "use the host browser for multi-tab browsing",
+    )
+    for query in browser_queries:
+        results = runtime.search_skills(query, limit=3)
+        assert results[0].name == "browser-automation"
+
+    form_results = [
+        skill.name
+        for skill in runtime.search_skills(
+            "fill a web form with a checkbox and file upload",
+            limit=3,
+        )
+    ]
+    assert "browser-automation" in form_results
+    assert "browser-form-workflows" in form_results
 
 
 def test_host_computer_use_ranks_before_linux_desktop_for_host_screen_queries(monkeypatch):

@@ -54,6 +54,20 @@ class _FakeCallToolResult(SimpleNamespace):
     pass
 
 
+class _TrackingLock:
+    def __init__(self):
+        self.held = False
+
+    def __enter__(self):
+        assert self.held is False
+        self.held = True
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.held = False
+        return False
+
+
 @pytest.fixture
 def mcp_handler_module(monkeypatch, tmp_path):
     monkeypatch.delitem(sys.modules, "helpers.mcp_handler", raising=False)
@@ -117,6 +131,10 @@ def mcp_handler_module(monkeypatch, tmp_path):
 
         def stream(self, *args, **kwargs):
             return self
+
+        @staticmethod
+        def warning(*args, **kwargs):
+            return None
 
     def _fake_get_abs_path(*parts):
         return str(tmp_path.joinpath(*parts))
@@ -192,6 +210,57 @@ def test_mcp_config_preserves_dotted_tool_names(mcp_handler_module):
     asyncio.run(config.call_tool("server.alpha.beta", {"value": 7}))
 
     assert called == [("alpha.beta", {"value": 7})]
+
+
+def test_mcp_config_call_tool_releases_config_lock_before_await(
+    mcp_handler_module, monkeypatch
+):
+    module, _tmp_path = mcp_handler_module
+    lock = _TrackingLock()
+    observed_lock_state: list[bool] = []
+
+    monkeypatch.setattr(module.MCPConfig, "_MCPConfig__lock", lock, raising=False)
+
+    class _FakeServer:
+        name = "server"
+        description = "Fake MCP server"
+        type = "stdio"
+        scope = "global"
+
+        def has_tool(self, tool_name):
+            return tool_name == "run"
+
+        async def call_tool(self, tool_name, input_data):
+            observed_lock_state.append(lock.held)
+            await asyncio.sleep(0)
+            return _FakeCallToolResult(content=[], isError=False)
+
+    config = module.MCPConfig(servers_list=[])
+    config.servers = [_FakeServer()]
+
+    asyncio.run(config.call_tool("server.run", {}))
+
+    assert observed_lock_state == [False]
+
+
+def test_mcp_config_update_initializes_outside_config_lock(
+    mcp_handler_module, monkeypatch
+):
+    module, _tmp_path = mcp_handler_module
+    lock = _TrackingLock()
+    observed_lock_state: list[bool] = []
+    original_init = module.MCPConfig.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        observed_lock_state.append(lock.held)
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(module.MCPConfig, "_MCPConfig__lock", lock, raising=False)
+    monkeypatch.setattr(module.MCPConfig, "__init__", tracking_init)
+
+    module.MCPConfig.update('{"mcpServers": {}}')
+
+    assert observed_lock_state[-1] is False
 
 
 def test_mcp_status_marks_servers_with_errors_disconnected(mcp_handler_module):
@@ -308,6 +377,69 @@ def test_mcp_client_call_tool_uses_server_tool_timeout(mcp_handler_module, monke
 
     assert session_timeouts == [7]
     assert call_timeouts[0].total_seconds() == 7
+
+
+def test_mcp_session_cleanup_timeout_does_not_mask_success(
+    mcp_handler_module, monkeypatch
+):
+    module, _tmp_path = mcp_handler_module
+    monkeypatch.setattr(module, "MCP_SESSION_CLEANUP_TIMEOUT_SECONDS", 0.01)
+
+    class _HangingTransport:
+        async def __aenter__(self):
+            return "stdio", "write"
+
+        async def __aexit__(self, exc_type, exc, tb):
+            await asyncio.sleep(60)
+
+    class _FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def initialize(self):
+            pass
+
+    class _FakeClient(module.MCPClientBase):
+        async def _create_stdio_transport(self, current_exit_stack):
+            return await current_exit_stack.enter_async_context(_HangingTransport())
+
+    async def operation(_session):
+        return "ok"
+
+    monkeypatch.setattr(module, "ClientSession", _FakeSession)
+    client = _FakeClient(SimpleNamespace(name="server"))
+
+    assert asyncio.run(client._execute_with_session(operation)) == "ok"
+
+
+def test_mcp_isolated_operation_timeout_returns_control(mcp_handler_module):
+    module, _tmp_path = mcp_handler_module
+
+    class _FakeClient(module.MCPClientBase):
+        async def _create_stdio_transport(self, current_exit_stack):
+            raise AssertionError("transport should not be used")
+
+    async def never_finishes():
+        await asyncio.sleep(60)
+
+    client = _FakeClient(SimpleNamespace(name="server"))
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(
+            client._run_isolated_operation(
+                "wedged",
+                never_finishes,
+                timeout_seconds=0.01,
+            )
+        )
+
+    assert "operation did not finish" in client.error
 
 
 def test_mcp_image_content_becomes_history_image_attachment(mcp_handler_module, monkeypatch):

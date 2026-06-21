@@ -9,7 +9,8 @@ class IncludeLoadedSkills(Extension):
         if not self.agent:
             return
 
-        extras = loop_data.extras_persistent
+        protocol = loop_data.protocol_persistent
+        protocol.pop("loaded_skills", None)
 
         # Get loaded skills names
         skill_names = self.agent.data.get(DATA_NAME_LOADED_SKILLS)
@@ -31,8 +32,8 @@ class IncludeLoadedSkills(Extension):
             return
 
 
-        # Inject into extras
-        extras["loaded_skills"] = self.agent.read_prompt(
+        # Inject into protocol
+        protocol["loaded_skills"] = self.agent.read_prompt(
             "agent.system.skills.loaded.md",
             skills=content,
         )

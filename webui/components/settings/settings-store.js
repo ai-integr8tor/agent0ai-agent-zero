@@ -35,6 +35,7 @@ const TAB_ITEMS = Object.freeze([
     sections: [
       { id: "section-skills-list", label: "List Skills", icon: "view_list" },
       { id: "section-skills-import", label: "Import Skills", icon: "upload_file" },
+      { id: "section-skills-scan", label: "Scan Skills", icon: "radar" },
     ],
   },
   {

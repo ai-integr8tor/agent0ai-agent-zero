@@ -71,7 +71,9 @@ def load_tmp_chats():
     folders = files.list_files(CHATS_FOLDER, "*")
     json_files = []
     for folder_name in folders:
-        json_files.append(_get_chat_file_path(folder_name))
+        chat_file = _get_chat_file_path(folder_name)
+        if files.exists(chat_file):
+            json_files.append(chat_file)
 
     ctxids = []
     for file in json_files:
@@ -132,8 +134,8 @@ def remove_msg_files(ctxid):
 
 def _serialize_context(context: AgentContext):
     profile = str(
-        getattr(context.config, "profile", None)
-        or getattr(context.agent0.config, "profile", None)
+        getattr(context.agent0.config, "profile", None)
+        or getattr(context.config, "profile", None)
         or ""
     )
 
@@ -180,6 +182,7 @@ def _serialize_agent(agent: Agent):
 
     return {
         "number": agent.number,
+        "agent_profile": str(getattr(agent.config, "profile", "") or ""),
         "data": data,
         "history": history,
     }
@@ -232,9 +235,21 @@ def _deserialize_context(data):
         streaming_agent = streaming_agent.data.get(Agent.DATA_NAME_SUBORDINATE, None)
 
     context.agent0 = agent0
+    context.config = agent0.config
     context.streaming_agent = streaming_agent
 
     return context
+
+
+def _deserialize_agent_config(
+    agent_data: dict[str, Any], fallback_config: AgentConfig
+) -> AgentConfig:
+    fallback_profile = str(getattr(fallback_config, "profile", "") or "")
+    profile = str(agent_data.get("agent_profile") or fallback_profile).strip()
+    if profile == fallback_profile:
+        return fallback_config
+    override_settings = {"agent_profile": profile} if profile else None
+    return initialize_agent(override_settings=override_settings)
 
 
 def _deserialize_agents(
@@ -246,7 +261,7 @@ def _deserialize_agents(
     for ag in agents:
         current = Agent(
             number=ag["number"],
-            config=config,
+            config=_deserialize_agent_config(ag, config),
             context=context,
         )
         current.data = ag.get("data", {})

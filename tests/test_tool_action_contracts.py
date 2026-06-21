@@ -146,6 +146,24 @@ def test_skills_tool_accepts_action_alias_for_search(monkeypatch, tmp_path: Path
     assert "browser-form-workflows" in response.message
 
 
+def test_skills_tool_load_reports_protocol_injection(monkeypatch, tmp_path: Path):
+    module = _load_skills_tool(monkeypatch, tmp_path)
+    agent = _FakeAgent()
+    tool = module.SkillsTool(
+        agent,
+        "skills_tool",
+        None,
+        {"action": "load", "skill_name": "browser-form-workflows"},
+        "",
+        None,
+    )
+
+    response = asyncio.run(tool.execute(**tool.args))
+
+    assert response.message == "Loaded skill 'browser-form-workflows' into Protocol."
+    assert agent.data["loaded_skills"] == ["browser-form-workflows"]
+
+
 def test_skills_tool_read_file_action_reads_inside_skill_dir(
     monkeypatch, tmp_path: Path
 ):
