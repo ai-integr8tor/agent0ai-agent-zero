@@ -10,6 +10,7 @@ import tempfile
 from typing import TypedDict
 
 from helpers import tokens
+from helpers.strings import sanitize_string
 from plugins._text_editor.helpers.context_patch import (
     apply_context_patch_with_metadata,
 )
@@ -187,6 +188,7 @@ def write_file(path: str, content: str | None) -> WriteResult:
     """Create or overwrite a file."""
     if content is None:
         content = ""
+    content = sanitize_string(content)
     path = os.path.expanduser(path)
     try:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)

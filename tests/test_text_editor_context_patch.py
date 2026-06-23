@@ -17,6 +17,7 @@ from plugins._text_editor.helpers.context_patch import ContextPatchError
 from plugins._text_editor.helpers.file_ops import (
     apply_context_patch_file,
     apply_exact_replace_file,
+    write_file,
 )
 from plugins._text_editor.helpers.patch_request import (
     exact_replace_to_patch_text,
@@ -30,6 +31,15 @@ from plugins._text_editor.helpers.patch_state import (
     mark_file_state_stale,
     record_file_state,
 )
+
+
+def test_text_editor_write_file_sanitizes_surrogate_content(tmp_path: Path) -> None:
+    target = tmp_path / "todo.md"
+
+    result = write_file(str(target), "# \ud83d\udcdd My Tasks\n")
+
+    assert result["error"] == ""
+    assert target.read_text(encoding="utf-8") == "# ?? My Tasks\n"
 
 
 def test_context_patch_chains_after_line_shift(tmp_path: Path) -> None:

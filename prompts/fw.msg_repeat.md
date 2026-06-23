@@ -1,1 +1,1 @@
-You have sent the same message again. You have to do something else!
+You repeated the exact same already-processed response. Do not call the same tool with the same arguments again. If the previous tool result completed the task, immediately use `tool_name`: `response` with a brief final answer. If more work is needed, output a different valid JSON tool request with different `tool_args`.

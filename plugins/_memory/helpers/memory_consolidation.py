@@ -102,11 +102,47 @@ class MemoryConsolidator:
             return result
 
         except asyncio.TimeoutError:
-            PrintStyle().error(f"Memory consolidation timeout for area {area}")
-            return {"success": False, "memory_ids": []}
+            PrintStyle().warning(
+                f"Memory consolidation timeout for area {area}; inserting memory without consolidation"
+            )
+            return await self._insert_memory_directly(
+                new_memory,
+                metadata,
+                log_item,
+                result="Memory inserted after consolidation timeout",
+                consolidation_action="timeout_direct_insert",
+            )
 
         except Exception as e:
             PrintStyle().error(f"Memory consolidation error for area {area}: {str(e)}")
+            return {"success": False, "memory_ids": []}
+
+    async def _insert_memory_directly(
+        self,
+        new_memory: str,
+        metadata: Dict[str, Any],
+        log_item: Optional[LogItem] = None,
+        *,
+        result: str = "Memory inserted successfully",
+        consolidation_action: str = "direct_insert",
+    ) -> dict:
+        try:
+            db = await Memory.get(self.agent)
+            insert_metadata = dict(metadata)
+            if 'timestamp' not in insert_metadata:
+                insert_metadata['timestamp'] = self._get_timestamp()
+            memory_id = await db.insert_text(new_memory, insert_metadata)
+            if log_item:
+                log_item.update(
+                    result=result,
+                    memory_ids=[memory_id],
+                    consolidation_action=consolidation_action
+                )
+            return {"success": True, "memory_ids": [memory_id]}
+        except Exception as e:
+            PrintStyle().error(f"Direct memory insertion failed: {str(e)}")
+            if log_item:
+                log_item.update(result=f"Memory insertion failed: {str(e)}")
             return {"success": False, "memory_ids": []}
 
     async def _process_memory_with_consolidation(

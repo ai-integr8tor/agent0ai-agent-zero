@@ -17,6 +17,7 @@
 - Keep memory scoped by configured subdirectory/context.
 - Preserve embedding metadata needed to rebuild indexes safely.
 - Avoid storing transient action-history noise as durable memory.
+- If LLM-based consolidation times out, insert the new memory directly instead of dropping it.
 
 ## Work Guidance
 

@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Ordered Python files own main, tools, MCP, secrets, skills, and project prompt sections.
+- Ordered Python files own main, small-local-model, tools, MCP, secrets, skills, and project prompt sections.
 - Active project instruction bodies are moved into prompt protocol; the system prompt keeps project metadata and stable project rules.
 
 ## Local Contracts

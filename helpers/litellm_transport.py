@@ -457,7 +457,13 @@ class ChatCompletionsTransport:
         explicit_prompt_caching: bool = False,
     ) -> dict[str, Any]:
         chat_kwargs = dict(kwargs)
+        response_function_tools = chat_kwargs.pop("a0_responses_function_tools", None)
         _drop_internal_transport_kwargs(chat_kwargs)
+        chat_tools = ChatCompletionsTransport.merge_chat_tools(
+            chat_kwargs.get("tools"), response_function_tools
+        )
+        if _has_tools(chat_tools):
+            chat_kwargs["tools"] = chat_tools
         if not _has_tools(chat_kwargs.get("tools")):
             chat_kwargs.pop("tools", None)
             chat_kwargs.pop("tool_choice", None)
@@ -489,7 +495,85 @@ class ChatCompletionsTransport:
         reasoning_delta = _get_value(delta, "reasoning_content") or _get_value(
             message, "reasoning_content"
         ) or ""
+        tool_calls = _get_value(delta, "tool_calls") or _get_value(
+            message, "tool_calls"
+        )
+        if tool_calls and not response_delta:
+            response_delta = ChatCompletionsTransport.tool_calls_text(tool_calls)
         return {"reasoning_delta": reasoning_delta, "response_delta": response_delta}
+
+    @staticmethod
+    def merge_chat_tools(existing_tools: Any, response_tools: Any) -> Any:
+        tools: list[Any] = []
+        if isinstance(existing_tools, list):
+            tools.extend(existing_tools)
+        elif existing_tools:
+            tools.append(existing_tools)
+        tools.extend(ChatCompletionsTransport.chat_tools_from_response(response_tools))
+        return tools
+
+    @staticmethod
+    def chat_tools_from_response(tools: Any) -> list[Any]:
+        chat_tools: list[Any] = []
+        for tool in _as_list(tools):
+            if not isinstance(tool, dict):
+                chat_tools.append(tool)
+                continue
+            if tool.get("type") == "function" and "function" not in tool:
+                function = {
+                    "name": tool.get("name", ""),
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("parameters", {}),
+                }
+                if "strict" in tool:
+                    function["strict"] = tool["strict"]
+                chat_tools.append({"type": "function", "function": function})
+            else:
+                chat_tools.append(dict(tool))
+        return chat_tools
+
+    @staticmethod
+    def tool_calls_text(tool_calls: Any) -> str:
+        calls = [
+            ChatCompletionsTransport.tool_call_object(tool_call)
+            for tool_call in _as_list(tool_calls)
+        ]
+        calls = [call for call in calls if call]
+        if not calls:
+            return ""
+        if len(calls) == 1:
+            return json.dumps(calls[0])
+        return json.dumps(
+            {"tool_name": "parallel_tool_calls", "tool_args": {"calls": calls}}
+        )
+
+    @staticmethod
+    def tool_call_object(tool_call: Any) -> dict[str, Any]:
+        if not isinstance(tool_call, dict):
+            tool_call = _object_to_dict(tool_call)
+        function = _get_value(tool_call, "function") or {}
+        if not isinstance(function, dict):
+            function = _object_to_dict(function)
+        name = _get_value(function, "name") or _get_value(tool_call, "name")
+        if not name:
+            return {}
+        raw_arguments = _get_value(function, "arguments") or _get_value(
+            tool_call, "arguments"
+        )
+        if isinstance(raw_arguments, str):
+            try:
+                args = json.loads(raw_arguments or "{}")
+            except Exception:
+                args = {"arguments": raw_arguments}
+        elif isinstance(raw_arguments, dict):
+            args = dict(raw_arguments)
+        elif raw_arguments is None:
+            args = {}
+        else:
+            args = {"arguments": raw_arguments}
+        if not isinstance(args, dict):
+            args = {"arguments": args}
+        return {"tool_name": str(name), "tool_args": args}
 
 
 class ResponsesTransport:

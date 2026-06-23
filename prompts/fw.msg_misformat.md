@@ -1,1 +1,1 @@
-You have misformatted your message. Follow system prompt instructions on JSON message formatting precisely.
+You have misformatted your message. Output exactly one JSON object with `tool_name` and `tool_args`. For a final user answer, use `tool_name`: `response`. Do not output reasoning-only text, markdown fences, or a JSON object that only has `thoughts` and `headline`.

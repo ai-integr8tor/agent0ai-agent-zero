@@ -9,7 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from helpers.extract_tools import normalize_tool_request
+from helpers.extract_tools import extract_tool_request, normalize_tool_request
 from helpers import parallel_tools
 
 
@@ -66,6 +66,117 @@ def test_normalize_tool_request_preserves_explicit_action_over_method() -> None:
 def test_normalize_tool_request_rejects_missing_args() -> None:
     with pytest.raises(ValueError, match="tool_args"):
         normalize_tool_request({"tool_name": "response"})
+
+
+def test_extract_tool_request_repairs_root_level_tool_args() -> None:
+    assert extract_tool_request(
+        """
+        {
+          "thoughts": ["Need to write the todo file."],
+          "headline": "Creating TODO list",
+          "tool_name": "text_editor",
+          "action": "write",
+          "path": "/a0/usr/workdir/todos.md",
+          "content": "# My Tasks"
+        }
+        """
+    ) == {
+        "tool_name": "text_editor",
+        "tool_args": {
+            "action": "write",
+            "path": "/a0/usr/workdir/todos.md",
+            "content": "# My Tasks",
+        },
+    }
+
+
+def test_extract_tool_request_accepts_argument_aliases() -> None:
+    assert extract_tool_request(
+        '{"function_name":"response","arguments":{"text":"done"}}'
+    ) == {"tool_name": "response", "tool_args": {"text": "done"}}
+
+
+def test_extract_tool_request_repairs_response_string_args() -> None:
+    assert extract_tool_request('{"tool_name":"response","tool_args":"hello"}') == {
+        "tool_name": "response",
+        "tool_args": {"text": "hello"},
+    }
+
+
+def test_extract_tool_request_recovers_incomplete_response_text() -> None:
+    assert extract_tool_request(
+        '{"tool_name":"response","tool_args":{"text":"### Report\\n\\nFinding: \\"quoted'
+    ) == {
+        "tool_name": "response",
+        "tool_args": {"text": '### Report\n\nFinding: "quoted'},
+    }
+
+
+def test_extract_tool_request_does_not_recover_incomplete_action_tool() -> None:
+    assert (
+        extract_tool_request(
+            '{"tool_name":"text_editor","tool_args":{"content":"# My Tasks'
+        )
+        is None
+    )
+    assert extract_tool_request('{"') is None
+
+
+def test_extract_tool_request_sanitizes_surrogate_tool_args() -> None:
+    request = extract_tool_request(
+        r'{"tool_name":"text_editor","tool_args":{"content":"# \ud83d\udcdd My Tasks"}}'
+    )
+
+    assert request == {
+        "tool_name": "text_editor",
+        "tool_args": {"content": "# ?? My Tasks"},
+    }
+    request["tool_args"]["content"].encode("utf-8")
+
+
+def test_extract_tool_request_recovers_thoughts_only_greeting_response() -> None:
+    assert extract_tool_request(
+        """
+        Reasoning:
+        {
+          "thoughts": [
+            "The user has sent a simple 'hi' greeting.",
+            "I need to respond with the appropriate JSON format using the response tool.",
+            "A friendly acknowledgment and offer of assistance would be good."
+          ],
+          "headline": "Acknowledging user's greeting and offering help"
+        }
+        """
+    ) == {
+        "tool_name": "response",
+        "tool_args": {"text": "Hi. How can I help?"},
+    }
+
+
+def test_extract_tool_request_does_not_convert_action_planning_to_response() -> None:
+    assert (
+        extract_tool_request(
+            """
+            {
+              "thoughts": [
+                "The user wants a TODO list in the canvas.",
+                "I should use text_editor with action write."
+              ],
+              "headline": "Creating TODO list locally"
+            }
+            """
+        )
+        is None
+    )
+
+
+def test_extract_tool_request_prefers_later_valid_tool_object() -> None:
+    assert extract_tool_request(
+        """
+        Reasoning: {"thoughts":["I need to use text_editor."],"headline":"Plan"}
+        {"tool_name":"response","tool_args":{"text":"done"}}
+        """
+    ) == {"tool_name": "response", "tool_args": {"text": "done"}}
 
 
 def test_normalize_parallel_tool_calls_accepts_full_agent_reply_shape() -> None:

@@ -16,6 +16,7 @@
 - Preserve stale-read protection before patch operations.
 - Validate patch structures before applying edits.
 - Read back changed regions after writes or patches where the tool contract requires confirmation.
+- Sanitize invalid Unicode surrogate characters before writing text content to UTF-8 files.
 
 ## Work Guidance
 

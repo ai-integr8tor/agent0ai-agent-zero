@@ -266,6 +266,19 @@ class ChatGenerationResult:
         return ChatChunk(response_delta=response, reasoning_delta=reasoning)
 
 
+def _force_non_streaming_chat_tools(call_kwargs: dict[str, Any]) -> bool:
+    mode = str(call_kwargs.get("a0_api_mode") or "").lower().strip()
+    if mode not in {
+        "chat",
+        "chat_completion",
+        "chat_completions",
+        "completion",
+        "completions",
+    }:
+        return False
+    return bool(call_kwargs.get("a0_responses_function_tools"))
+
+
 rate_limiters: dict[str, RateLimiter] = {}
 api_keys_round_robin: dict[str, int] = {}
 
@@ -685,6 +698,8 @@ class LiteLLMChatWrapper(SimpleChatModel):
             or response_callback is not None
             or tokens_callback is not None
         )
+        if _force_non_streaming_chat_tools(call_kwargs):
+            stream = False
         transport = LiteLLMTransport(
             model=self.model_name,
             messages=msgs_conv,
