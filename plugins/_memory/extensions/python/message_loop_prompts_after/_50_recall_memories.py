@@ -35,6 +35,21 @@ class RecallMemories(Extension):
         if not set["memory_recall_enabled"]:
             return None
 
+        # Cancel any previous recall task that is still pending.
+        # Without this, when memory_recall_delayed=True or when a new
+        # recall interval fires before the previous one finished, the old
+        # task is orphaned and asyncio emits
+        # "Task was destroyed but it is pending! task: wait_for=>" when
+        # the DeferredTask/EventLoopThread is torn down.
+        previous_task = self.agent.get_data(DATA_NAME_TASK)
+        if previous_task is not None and not previous_task.done():
+            previous_task.cancel()
+            try:
+                # Eat the CancelledError so it doesn't surface elsewhere
+                await previous_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         # every X iterations (or the first one) recall memories
         if loop_data.iteration % set["memory_recall_interval"] == 0:
 
@@ -44,11 +59,25 @@ class RecallMemories(Extension):
                 heading="Searching memories...",
             )
 
+            async def _safe_recall():
+                try:
+                    await self.search_memories(
+                        loop_data=loop_data, log_item=log_item, **kwargs
+                    )
+                except asyncio.CancelledError:
+                    # Re-raise so the task wrapper sees it and the
+                    # EventLoopThread's tear-down doesn't leave a pending task.
+                    raise
+                except Exception as e:
+                    err = errors.format_error(e)
+                    self.agent.context.log.log(
+                        type="warning",
+                        heading="Recall memories extension error:",
+                        content=err,
+                    )
+
             task = asyncio.create_task(
-                asyncio.wait_for(
-                    self.search_memories(loop_data=loop_data, log_item=log_item, **kwargs),
-                    timeout=SEARCH_TIMEOUT,
-                )
+                asyncio.wait_for(_safe_recall(), timeout=SEARCH_TIMEOUT)
             )
         else:
             task = None
