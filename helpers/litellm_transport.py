@@ -1530,6 +1530,13 @@ def _is_responses_not_supported_error(exc: Exception) -> bool:
         marker in text for marker in ("404", "not found")
     ):
         return True
+    # llama.cpp / partial Responses-API implementations reject the
+    # `items[]` payload with messages like "Cannot determine type of 'item'".
+    # Treat those as "endpoint not supported" so we fall back to chat completions.
+    if "cannot determine type" in text and "item" in text:
+        return True
+    if "invalid_request_error" in text and ("item" in text or "/v1/responses" in text):
+        return True
     return any(
         marker in text
         for marker in (
