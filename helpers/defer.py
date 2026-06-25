@@ -17,11 +17,23 @@ async def _drain_pending_tasks(loop: asyncio.AbstractEventLoop) -> None:
     "Task was destroyed but it is pending!" when ``loop.close()`` runs while
     background tasks (e.g. ``asyncio.wait_for(...)`` coroutines) are still
     scheduled.
+
+    The drain task itself MUST be excluded from the cancellation set:
+    ``asyncio.run_coroutine_threadsafe`` schedules this coroutine as a Task
+    on ``loop`` and ``asyncio.all_tasks(loop=loop)`` includes it. Cancelling
+    it would abort ``asyncio.gather`` before it could await the other
+    cancellations, leaving the originally-pending tasks still pending.
     """
-    pending = [t for t in asyncio.all_tasks(loop=loop) if not t.done()]
+    current = asyncio.current_task(loop=loop)
+    pending = [
+        t for t in asyncio.all_tasks(loop=loop)
+        if not t.done() and t is not current
+    ]
     for t in pending:
         t.cancel()
     if pending:
+        # Wait for cancellations to settle, ignoring any errors raised by
+        # cancelled children (CancelledError, TimeoutError, ...).
         await asyncio.gather(*pending, return_exceptions=True)
 
 

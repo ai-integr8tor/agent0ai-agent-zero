@@ -51,3 +51,10 @@ agent_history.gif
 .agent/**
 .claude/**
 .playwright-cli/
+
+# Local-only artifacts (testing Docker image, user-data backups, test venv)
+/agent-zero-backup-*.zip
+/DockerfileFix
+/docker-compose.fix.yml
+/.venv-test/
+/docker/run/agent-zero/
