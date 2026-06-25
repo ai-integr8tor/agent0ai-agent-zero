@@ -4,11 +4,40 @@ import regex, re
 from helpers.modules import load_classes_from_file, load_classes_from_folder # keep here for backwards compatibility
 from typing import Any
 
+
+def _sanitize_for_json_parsing(content: str) -> str:
+    """
+    Remove common LLM output artifacts that break JSON parsing:
+    markdown fences, XML-like wrappers, text outside JSON, and leading/trailing whitespace.
+    """
+    if not isinstance(content, str):
+        return ""
+
+    # 1. Strip markdown code blocks (```json ... ``` and ``` ... ```)
+    cleaned = re.sub(r'^```[a-zA-Z]*\s*\n?', '', content, flags=re.MULTILINE)
+    cleaned = re.sub(r'\n?```\s*$', '', cleaned, flags=re.MULTILINE)
+
+    # 2. Strip XML-style wrappers (<invoke>...</invoke>)
+    cleaned = re.sub(r'<\s*invoke\b[^>]*>.*?</\s*invoke\s*>', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'<\s*/\s*invoke\s*>', '', cleaned, flags=re.DOTALL)
+
+    # 3. Remove function-style wrappers (functions.tool_name:123)
+    cleaned = re.sub(r'functions\.\w+\s*:\s*\w+\s*', '', cleaned)
+
+    # 4. Remove leading text before the first '{' if any
+    first_brace = cleaned.find('{')
+    if first_brace > 0:
+        cleaned = cleaned[first_brace:]
+
+    return cleaned
+
+
 def json_parse_dirty(json: str) -> dict[str, Any] | None:
     if not json or not isinstance(json, str):
         return None
 
-    ext_json = extract_json_object_string(json.strip())
+    sanitized = _sanitize_for_json_parsing(json)
+    ext_json = extract_json_object_string(sanitized.strip())
     if ext_json:
         try:
             data = DirtyJson.parse_string(ext_json)
