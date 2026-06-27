@@ -34,10 +34,10 @@ class EnsureResponseLog(Extension):
         try:
             topic = self.agent.history.current if self.agent else None
             messages = topic.messages if topic else []
-            last_msg = messages[-1] if messages else None
-            if not last_msg or not last_msg.ai or not last_msg.content:
-                return ""
-            return self._normalize_response_content(last_msg.content)
+            for message in reversed(messages):
+                if message.ai and message.content:
+                    return self._normalize_response_content(message.content)
+            return ""
         except Exception:
             return ""
 
