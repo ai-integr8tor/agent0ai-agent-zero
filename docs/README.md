@@ -1,6 +1,5 @@
 ![Agent Zero Logo](res/header.png)
 # Agent Zero Documentation
-To begin with Agent Zero, follow the links below for detailed guides on various topics:
 
 - **[Installation](installation.md):** Set up (or [update](installation.md#how-to-update-agent-zero)) Agent Zero on your system.
 - **[Usage Guide](usage.md):** Explore GUI features and usage scenarios.
@@ -9,12 +8,61 @@ To begin with Agent Zero, follow the links below for detailed guides on various 
 - **[Contributing](contribution.md):** Learn how to contribute to the Agent Zero project.
 - **[Troubleshooting and FAQ](troubleshooting.md):** Find answers to common issues and questions.
 
-### Your experience with Agent Zero starts now!
+For architecture and source-linked internals, use
+[DeepWiki for Agent Zero](https://deepwiki.com/agent0ai/agent-zero). The local
+docs focus on practical setup, screenshots, and user workflows.
 
-- **Download Agent Zero:** Follow the [installation guide](installation.md) to download and run Agent Zero.
-- **Join the Community:** Join the Agent Zero [Skool](https://www.skool.com/agent-zero) or [Discord](https://discord.gg/Z2tun2N3) community to discuss ideas, ask questions, and collaborate with other contributors.
-- **Share your Work:** Share your Agent Zero creations, workflows and discoverings on our [Show and Tell](https://github.com/frdel/agent-zero/discussions/categories/show-and-tell) area on GitHub.
-- **Report Issues:** Use the [GitHub issue tracker](https://github.com/frdel/agent-zero/issues) to report framework-relative bugs or suggest new features.
+## Quick Start
+
+- **[Quickstart Guide](quickstart.md):** Get up and running in 5 minutes with Agent Zero.
+- **[Agent Zero Launcher](guides/launcher.md):** Use the desktop app to set up Docker, install Agent Zero, open Instances, or connect a remote Instance.
+- **[First-Run Onboarding](guides/onboarding.md):** Choose Cloud or Local, add a provider key, and select main and utility models.
+- **[Installation Guide](setup/installation.md):** A0 Launcher downloads, A0 Install, direct Docker, updates, and advanced Docker setup (includes [How to Update](setup/installation.md#how-to-update-agent-zero)).
+- **[A0 CLI Connector](guides/a0-cli-connector.md):** Install the host connector for a running Agent Zero instance, use the command palette, and switch Browser modes.
+- **[Self Update](guides/self-update.md):** How the in-app updater works (technical reference).
+- **[VPS Deployment](setup/vps-deployment.md):** Deploy Agent Zero on a remote server.
+- **[Development Setup](setup/dev-setup.md):** Set up a local development environment.
+
+## User Guides
+
+- **[Usage Guide](guides/usage.md):** Practical tour of Agent Zero's main workflows.
+- **[Agent Zero Launcher](guides/launcher.md):** Fresh-machine Launcher walkthrough, Docker setup gate, Installs, Instances, and docs screenshot capture with Playwright/Electron.
+- **[First-Run Onboarding](guides/onboarding.md):** Set up OpenRouter, our proxy API or another provider with the guided wizard.
+- **[Browser Guide](guides/browser.md):** Use the built-in Browser, live Canvas surface, annotations, screenshots, host browser mode, and extensions.
+- **[Desktop Guide](guides/desktop.md):** Use the built-in Linux desktop, GUI apps, and LibreOffice Writer/Calc/Impress Cowork.
+- **[A0 CLI Connector](guides/a0-cli-connector.md):** Terminal-first host connector for Agent Zero, with screenshots of the host picker, connected shell, command palette, and Browser modes.
+- **[Create a Small Plugin](guides/create-plugin.md):** Build and review a tiny Web UI plugin that adds an unread dot to the chat list.
+- **[Skills Guide](guides/skills.md):** Open the Skills selector, add active skills, and remove prompt protocol entries you no longer need.
+- **[Agent Profiles](guides/agent-profiles.md):** Switch the current chat profile or create a new guided profile from the chat input.
+- **[Model Presets](guides/model-presets.md):** Create simple named shortcuts for model setups.
+- **[Memory Guide](guides/memory.md):** Search, edit, delete, and curate memories so useful context does not become stale noise.
+- **[Projects Tutorial](guides/projects.md):** Learn to create isolated workspaces with dedicated context and memory.
+- **[API Integration](guides/api-integration.md):** Add external APIs without writing code.
+- **[MCP Setup](guides/mcp-setup.md):** Configure Model Context Protocol servers.
+- **[A2A Setup](guides/a2a-setup.md):** Enable agent-to-agent communication.
+- **[Troubleshooting](guides/troubleshooting.md):** Solutions to common issues and FAQs.
+
+## Technical Reference
+
+- **[DeepWiki for Agent Zero](https://deepwiki.com/agent0ai/agent-zero):** Architecture, Web UI internals, plugin lifecycle, backend APIs, deployment details, and source-linked explanations.
+- **[Architecture](developer/architecture.md):** Short local handoff to DeepWiki plus practical starting points.
+- **[Plugins](developer/plugins.md):** Compact plugin starting points and sharing checklist.
+- **[Extensions](developer/extensions.md):** Short guide for when an extension is the right tool.
+- **[Connectivity](developer/connectivity.md):** Choose between A0 CLI, MCP, A2A, and external APIs.
+- **[WebSockets](developer/websockets.md):** Short local handoff to DeepWiki and source files.
+- **[MCP Configuration](developer/mcp-configuration.md):** Compact reference for MCP JSON.
+- **[Notifications](developer/notifications.md):** Notification system architecture and setup.
+- **[Contributing Skills](developer/contributing-skills.md):** Create and share agent skills.
+- **[Contributing Guide](guides/contribution.md):** Contribute to the Agent Zero project.
+
+## Community & Support
+
+- **Join the Community:** Connect with other users on [Discord](https://discord.gg/B8KZKNsPpj) to discuss ideas, ask questions, and collaborate.
+- **Share Your Work:** Show off your Agent Zero creations and workflows in the [Show and Tell](https://github.com/agent0ai/agent-zero/discussions/categories/show-and-tell) area.
+- **Report Issues:** Use the [GitHub issue tracker](https://github.com/agent0ai/agent-zero/issues) to report bugs or suggest features.
+- **Follow Updates:** Subscribe to the [YouTube channel](https://www.youtube.com/@AgentZeroFW) for tutorials and release videos.
+
+---
 
 ## Table of Contents
 
