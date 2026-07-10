@@ -1,0 +1,12 @@
+enabled: true
+min_total_tokens: 4000
+model_name_override: ""
+compress_user_messages: true
+protect_recent: 4
+target_ratio: 0.35
+min_tokens_to_compress: 250
+kompress_model: "disabled"
+clear_proxy_for_headroom: true
+log_savings: true
+warn_missing_dependency: true
+skip_non_text_messages: true

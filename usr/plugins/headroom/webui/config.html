@@ -1,0 +1,179 @@
+<html>
+<head>
+    <title>Headroom</title>
+</head>
+<body>
+    <div x-data>
+        <template x-if="config">
+            <div>
+                <div class="section-title">Headroom</div>
+                <div class="section-description">
+                    Compress chat context before Agent Zero sends it to the LLM.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Enable compression</div>
+                        <div class="field-description">
+                            Turn Headroom compression on for this settings scope.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.enabled">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Minimum context tokens</div>
+                        <div class="field-description">
+                            Skip Headroom until the outbound context is at least this large.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="500" x-model.number="config.min_total_tokens">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Model override</div>
+                        <div class="field-description">
+                            Optional Headroom model name. Leave empty to use the active LiteLLM model name.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.model_name_override">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Compress user-role messages</div>
+                        <div class="field-description">
+                            Agent Zero stores tool observations as user-role context, so this should usually stay on.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.compress_user_messages">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Protected recent messages</div>
+                        <div class="field-description">
+                            Number of newest messages to leave unchanged.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" max="20" x-model.number="config.protect_recent">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Target ratio</div>
+                        <div class="field-description">
+                            Optional compression target, for example 0.35 keeps roughly 35 percent.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0.05" max="1" step="0.05" x-model.number="config.target_ratio">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Minimum message tokens</div>
+                        <div class="field-description">
+                            Headroom skips individual messages below this size.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" step="50" x-model.number="config.min_tokens_to_compress">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Kompress model</div>
+                        <div class="field-description">
+                            Use disabled for deterministic lightweight compression without extra ML downloads.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.kompress_model">
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Clear proxy for Headroom</div>
+                        <div class="field-description">
+                            Temporarily remove HTTP proxy variables while Headroom loads local tokenizer/model files.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.clear_proxy_for_headroom">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Skip multimodal messages</div>
+                        <div class="field-description">
+                            Leave vision or structured non-text messages untouched.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.skip_non_text_messages">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Log token savings</div>
+                        <div class="field-description">
+                            Add an info row when Headroom reports saved tokens.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.log_savings">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Warn when dependency is missing</div>
+                        <div class="field-description">
+                            Show one warning per chat if the Python package is not installed.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <label class="toggle">
+                            <input type="checkbox" x-model="config.warn_missing_dependency">
+                            <span class="toggler"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+</html>
