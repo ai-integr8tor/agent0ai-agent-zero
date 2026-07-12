@@ -8,7 +8,7 @@ import uuid
 from typing import Coroutine, Literal, TypedDict, cast, Union, Dict, List, Any
 from helpers import messages, tokens, settings, call_llm
 from enum import Enum
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage, ToolMessage
 from plugins._model_config.helpers.model_config import get_chat_model_config
 
 
@@ -713,7 +713,20 @@ def output_langchain(messages: list[OutputMessage]):
         if m["ai"]:
             result.append(AIMessage(content))  # type: ignore
         else:
-            result.append(HumanMessage(content))  # type: ignore
+            # Tool results are stored with ai=False. hist_add_tool_result packs
+            # {tool_name, tool_result, ...} into the content dict. Emit as
+            # ToolMessage so the model can distinguish tool output from user input.
+            raw_content = m.get("content")
+            tool_name = None
+            tool_result_text = None
+            tool_call_id = (m.get("metadata") or {}).get("id") or ""
+            if isinstance(raw_content, dict):
+                tool_name = raw_content.get("tool_name")
+                tool_result_text = raw_content.get("tool_result")
+            if tool_name and isinstance(tool_result_text, str):
+                result.append(ToolMessage(content=tool_result_text, tool_call_id=tool_call_id))  # type: ignore
+            else:
+                result.append(HumanMessage(content))  # type: ignore
     # ensure message type alternation
     result = group_messages_abab(result)
     return result
