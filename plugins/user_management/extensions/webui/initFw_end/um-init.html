@@ -1,0 +1,20 @@
+<html>
+<head>
+    <script type="module">
+        import { store } from "/plugins/user_management/webui/um-store.js";
+    </script>
+</head>
+<body>
+    <!-- Initialize the um store on page load -->
+    <div x-data>
+        <template x-if="$store.umUser">
+            <div x-init="$store.umUser.init()"></div>
+        </template>
+    </div>
+
+    <!-- NO full-screen login overlay.
+         Users authenticate via A0 native login page.
+         The um_* session vars are set automatically by the login extension.
+    -->
+</body>
+</html>

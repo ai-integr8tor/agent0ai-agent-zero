@@ -1,0 +1,211 @@
+<html>
+<head>
+    <title>User Management - Admin Panel</title>
+    <script type="module">
+        import { store } from "/plugins/user_management/webui/admin-store.js";
+    </script>
+</head>
+
+<body>
+<div x-data x-init="$store.umAdmin && $store.umAdmin.init()">
+    <template x-if="$store.umAdmin">
+        <div class="um-admin-panel">
+            <!-- Current user banner -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; padding:12px 16px;
+                        background:var(--color-bg, rgba(79,195,247,0.08)); border-radius:10px;
+                        border:1px solid var(--color-border, rgba(79,195,247,0.2));">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span class="material-symbols-outlined" style="font-size:28px; color:var(--color-primary, #4fc3f7);">account_circle</span>
+                    <div>
+                        <div style="font-size:14px; font-weight:600;">
+                            Logged in as: <span x-text="$store.umUser?.currentUser?.username" style="color:var(--color-primary, #4fc3f7);"></span>
+                        </div>
+                        <div style="font-size:11px; opacity:0.6;">
+                            Role: <span x-text="$store.umUser?.currentUser?.role" style="text-transform:capitalize;"></span>
+                            &nbsp;·&nbsp; ID: <span x-text="$store.umUser?.currentUser?.id"></span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-sm" @click="$store.umUser.logout()" title="Logout"
+                    style="display:flex; align-items:center; gap:4px; opacity:0.8;">
+                    <span class="material-symbols-outlined" style="font-size:16px;">logout</span>
+                    Logout
+                </button>
+            </div>
+
+            <h2 style="margin:0 0 16px 0;">User Management</h2>
+
+            <!-- Tab navigation -->
+            <div style="display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid var(--color-border); padding-bottom:8px;">
+                <button class="btn btn-sm"
+                    :class="$store.umAdmin.activeTab==='users' ? 'btn-primary' : 'btn-secondary'"
+                    @click="$store.umAdmin.activeTab='users'; $store.umAdmin.loadUsers()">
+                    Users
+                </button>
+                <button class="btn btn-sm"
+                    :class="$store.umAdmin.activeTab==='usage' ? 'btn-primary' : 'btn-secondary'"
+                    @click="$store.umAdmin.activeTab='usage'; $store.umAdmin.loadUsageSummary()">
+                    Token Usage
+                </button>
+            </div>
+
+            <!-- USERS TAB -->
+            <template x-if="$store.umAdmin.activeTab==='users'">
+                <div>
+                    <!-- Create user form -->
+                    <div style="display:flex; gap:8px; align-items:end; margin-bottom:16px; flex-wrap:wrap;">
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">Username</label>
+                            <input type="text" x-model="$store.umAdmin.newUsername" placeholder="username"
+                                style="display:block; padding:6px 10px;" />
+                        </div>
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">Password</label>
+                            <input type="password" x-model="$store.umAdmin.newPassword" placeholder="password"
+                                style="display:block; padding:6px 10px;" />
+                        </div>
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">Role</label>
+                            <select x-model="$store.umAdmin.newRole" style="display:block; padding:6px 10px;">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-sm btn-primary" @click="$store.umAdmin.createUser()"
+                            :disabled="$store.umAdmin.isLoading">
+                            + Add User
+                        </button>
+                    </div>
+
+                    <!-- Users table -->
+                    <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                        <thead>
+                            <tr style="border-bottom:2px solid var(--color-border); text-align:left;">
+                                <th style="padding:8px;">ID</th>
+                                <th style="padding:8px;">Username</th>
+                                <th style="padding:8px;">Role</th>
+                                <th style="padding:8px;">Created</th>
+                                <th style="padding:8px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="user in $store.umAdmin.users" :key="user.id">
+                                <tr style="border-bottom:1px solid var(--color-border);"
+                                    :style="$store.umUser?.currentUser?.id === user.id ? 'background:rgba(79,195,247,0.08);' : ''">
+                                    <td style="padding:8px;" x-text="user.id"></td>
+                                    <td style="padding:8px;">
+                                        <span x-text="user.username"></span>
+                                        <template x-if="$store.umUser?.currentUser?.id === user.id">
+                                            <span style="margin-left:6px; font-size:10px; padding:2px 6px; border-radius:4px;
+                                                         background:var(--color-primary, #4fc3f7); color:#fff; font-weight:600;
+                                                         vertical-align:middle;">YOU</span>
+                                        </template>
+                                    </td>
+                                    <td style="padding:8px;">
+                                        <span x-text="user.role"
+                                            :style="user.role==='admin' ? 'color:#f5a623; font-weight:bold;' : ''">
+                                        </span>
+                                    </td>
+                                    <td style="padding:8px; font-size:12px; opacity:0.7;" x-text="user.created_at"></td>
+                                    <td style="padding:8px;">
+                                        <button class="btn btn-sm"
+                                            style="color:#e74c3c; border-color:#e74c3c;"
+                                            @click="$store.umAdmin.deleteUser(user.id, user.username)"
+                                            :disabled="$store.umAdmin.currentUser && user.id === $store.umAdmin.currentUser.id">
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="$store.umAdmin.users.length === 0" style="opacity:0.5; text-align:center; padding:16px;">
+                        No users found.
+                    </p>
+                </div>
+            </template>
+
+            <!-- USAGE TAB -->
+            <template x-if="$store.umAdmin.activeTab==='usage'">
+                <div>
+                    <!-- Filters -->
+                    <div style="display:flex; gap:8px; align-items:end; margin-bottom:16px; flex-wrap:wrap;">
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">User</label>
+                            <select x-model="$store.umAdmin.filterUserId" style="display:block; padding:6px 10px;">
+                                <option :value="null">All Users</option>
+                                <template x-for="u in $store.umAdmin.users" :key="u.id">
+                                    <option :value="u.id" x-text="u.username"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">Group By</label>
+                            <select x-model="$store.umAdmin.filterGroupBy" style="display:block; padding:6px 10px;">
+                                <option value="day">Day</option>
+                                <option value="user">User</option>
+                                <option value="model">Model</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">From</label>
+                            <input type="date" x-model="$store.umAdmin.filterFromDate"
+                                style="display:block; padding:6px 10px;" />
+                        </div>
+                        <div>
+                            <label style="font-size:12px; opacity:0.7;">To</label>
+                            <input type="date" x-model="$store.umAdmin.filterToDate"
+                                style="display:block; padding:6px 10px;" />
+                        </div>
+                        <button class="btn btn-sm btn-primary" @click="$store.umAdmin.loadUsageSummary()"
+                            :disabled="$store.umAdmin.isLoading">
+                            Refresh
+                        </button>
+                        <button class="btn btn-sm btn-secondary" @click="$store.umAdmin.exportExcel()">
+                            📥 Export Excel
+                        </button>
+                    </div>
+
+                    <!-- Summary table -->
+                    <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                        <thead>
+                            <tr style="border-bottom:2px solid var(--color-border); text-align:left;">
+                                <th style="padding:8px;" x-text="$store.umAdmin.filterGroupBy === 'day' ? 'Date' : ($store.umAdmin.filterGroupBy === 'user' ? 'User' : 'Model')"></th>
+                                <th style="padding:8px;">Requests</th>
+                                <th style="padding:8px;">Input Tokens</th>
+                                <th style="padding:8px;">Output Tokens</th>
+                                <th style="padding:8px;">Total Tokens</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="row in $store.umAdmin.usageSummary" :key="row.group_key">
+                                <tr style="border-bottom:1px solid var(--color-border);">
+                                    <td style="padding:8px;" x-text="row.group_key"></td>
+                                    <td style="padding:8px;" x-text="$store.umAdmin.formatNumber(row.request_count)"></td>
+                                    <td style="padding:8px;" x-text="$store.umAdmin.formatNumber(row.total_input_tokens)"></td>
+                                    <td style="padding:8px;" x-text="$store.umAdmin.formatNumber(row.total_output_tokens)"></td>
+                                    <td style="padding:8px; font-weight:bold;" x-text="$store.umAdmin.formatNumber(row.total_tokens)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <p x-show="$store.umAdmin.usageSummary.length === 0" style="opacity:0.5; text-align:center; padding:16px;">
+                        No usage data found. Apply filters and click Refresh.
+                    </p>
+                </div>
+            </template>
+        </div>
+    </template>
+</div>
+
+<style>
+    .um-admin-panel {
+        padding: 16px;
+    }
+    .um-admin-panel table th {
+        font-weight: 600;
+        opacity: 0.8;
+    }
+</style>
+</body>
+</html>

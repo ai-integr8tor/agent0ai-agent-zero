@@ -1,0 +1,51 @@
+<div x-data>
+    <template x-if="$store.umUser">
+        <div>
+            <!-- When logged in: show user bar -->
+            <template x-if="$store.umUser.isLoggedIn">
+                <div style="display:flex; flex-direction:column; gap:6px; margin:4px 0;">
+                    <!-- User identity bar -->
+                    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px;
+                                background:var(--color-bg-secondary, rgba(79,195,247,0.06));
+                                border-radius:8px; border:1px solid var(--color-border, rgba(255,255,255,0.08));">
+                        <span class="material-symbols-outlined"
+                              style="font-size:22px; color:var(--color-primary, #4fc3f7);">
+                            account_circle
+                        </span>
+                        <div style="flex:1; min-width:0; overflow:hidden;">
+                            <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+                                 x-text="$store.umUser.currentUser?.username"></div>
+                            <div style="font-size:10px; opacity:0.5; text-transform:capitalize;"
+                                 x-text="$store.umUser.currentUser?.role"></div>
+                        </div>
+                        <!-- Logout button: ADMINS ONLY -->
+                        <template x-if="$store.umUser.isAdmin()">
+                            <button @click="$store.umUser.logout()"
+                                style="background:none; border:none; cursor:pointer; padding:4px;
+                                       opacity:0.6; border-radius:4px; display:flex;
+                                       transition:opacity 0.2s;"
+                                onmouseover="this.style.opacity='1'"
+                                onmouseout="this.style.opacity='0.6'"
+                                title="Logout">
+                                <span class="material-symbols-outlined" style="font-size:18px; color:#e74c3c;">logout</span>
+                            </button>
+                        </template>
+                    </div>
+
+                    <!-- Admin panel button (admins only) -->
+                    <template x-if="$store.umUser.isAdmin()">
+                        <button x-move-after=".config-button#memory-dash"
+                            class="config-button" id="um-admin-dash"
+                            @click="openModal('/plugins/user_management/webui/main.html')"
+                            title="User Management">
+                            <span class="material-symbols-outlined">admin_panel_settings</span>
+                        </button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- When NOT logged in: show login prompt (ADMINS ONLY via plugin UI) -->
+            <!-- Regular users must use the A0 native login page -->
+        </div>
+    </template>
+</div>
