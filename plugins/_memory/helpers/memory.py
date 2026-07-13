@@ -17,7 +17,7 @@ from langchain_community.vectorstores.utils import (
 )
 from langchain_core.embeddings import Embeddings
 
-import os, json, hashlib, re
+import os, json, hashlib, re, threading, tempfile
 
 import numpy as np
 
@@ -32,6 +32,7 @@ from agent import Agent, AgentContext
 import models
 import logging
 from simpleeval import simple_eval
+import asyncio
 
 
 # Raise the log level so WARNING messages aren't shown
@@ -59,6 +60,7 @@ class Memory:
         SOLUTIONS = "solutions"
 
     index: dict[str, "MyFaiss"] = {}
+    _write_lock: dict[str, threading.Lock] = {}
 
     @staticmethod
     def _get_embedding_config(agent=None):
@@ -337,30 +339,74 @@ class Memory:
     def get_document_by_id(self, id: str) -> Document | None:
         return self.db.get_by_ids(id)[0]
 
+    def _repair_faiss_desync(self):
+        """Auto-repair FAISS index/docstore mapping desync."""
+        db = self.db
+        ntotal = db.index.ntotal
+        i2d = db.index_to_docstore_id
+        desync = ntotal - len(i2d)
+        if desync <= 0:
+            return 0
+        # Find unmapped index positions
+        unmapped = [i for i in range(ntotal) if i not in i2d]
+        # Find orphan docstore entries
+        mapped_doc_ids = set(i2d.values())
+        all_doc_ids = set(db.docstore._dict.keys())
+        orphan_docs = sorted(all_doc_ids - mapped_doc_ids)
+        if len(unmapped) == len(orphan_docs) and len(unmapped) > 0:
+            for pos, doc_id in zip(sorted(unmapped), orphan_docs):
+                i2d[pos] = doc_id
+            PrintStyle(font_color="yellow").print(
+                f"FAISS auto-repair: linked {len(unmapped)} orphan(s) in '{self.memory_subdir}'"
+            )
+            logging.getLogger(__name__).warning(
+                f"FAISS auto-repair: linked {len(unmapped)} orphan(s) in '{self.memory_subdir}'"
+            )
+            self._save_db()
+            return len(unmapped)
+        return 0
+
     async def search_similarity_threshold(
         self, query: str, limit: int, threshold: float, filter: str = ""
     ):
         comparator = Memory._get_comparator(filter) if filter else None
-
-        return await self.db.asearch(
-            query,
-            search_type="similarity_score_threshold",
-            k=limit,
-            score_threshold=threshold,
-            filter=comparator,
-        )
+        try:
+            return await self.db.asearch(
+                query,
+                search_type="similarity_score_threshold",
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
+        except KeyError:
+            self._repair_faiss_desync()
+            return await self.db.asearch(
+                query,
+                search_type="similarity_score_threshold",
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
 
     async def search_similarity_threshold_with_scores(
         self, query: str, limit: int, threshold: float, filter: str = ""
     ) -> list[tuple[Document, float]]:
         comparator = Memory._get_comparator(filter) if filter else None
-
-        return await self.db.asimilarity_search_with_relevance_scores(
-            query,
-            k=limit,
-            score_threshold=threshold,
-            filter=comparator,
-        )
+        try:
+            return await self.db.asimilarity_search_with_relevance_scores(
+                query,
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
+        except KeyError:
+            self._repair_faiss_desync()
+            return await self.db.asimilarity_search_with_relevance_scores(
+                query,
+                k=limit,
+                score_threshold=threshold,
+                filter=comparator,
+            )
 
     async def delete_documents_by_query(
         self,
@@ -452,35 +498,57 @@ class Memory:
         ids = await self.insert_documents([doc])
         return ids[0]
 
+    def _get_write_lock(self) -> threading.Lock:
+        if self.memory_subdir not in Memory._write_lock:
+            Memory._write_lock[self.memory_subdir] = threading.Lock()
+        return Memory._write_lock[self.memory_subdir]
+
     async def insert_documents(self, docs: list[Document]):
-        ids = [self._generate_doc_id() for _ in range(len(docs))]
-        timestamp = self.get_timestamp()
+        lock = self._get_write_lock()
+        acquired = lock.acquire(timeout=30)
+        if not acquired:
+            logging.getLogger(__name__).error(
+                f"FAISS write lock timeout in '{self.memory_subdir}' for insert_documents"
+            )
+            raise RuntimeError("FAISS write lock timeout")
+        try:
+            ids = [self._generate_doc_id() for _ in range(len(docs))]
+            timestamp = self.get_timestamp()
 
-        if ids:
-            for doc, id in zip(docs, ids):
-                doc.metadata["id"] = id  # add ids to documents metadata
-                doc.metadata["timestamp"] = timestamp  # add timestamp
-                if not doc.metadata.get("area", ""):
-                    doc.metadata["area"] = Memory.Area.MAIN.value
+            if ids:
+                for doc, id in zip(docs, ids):
+                    doc.metadata["id"] = id
+                    doc.metadata["timestamp"] = timestamp
+                    if not doc.metadata.get("area", ""):
+                        doc.metadata["area"] = Memory.Area.MAIN.value
 
-            await self.db.aadd_documents(documents=docs, ids=ids)
-            self._save_db()  # persist
-        return ids
+                await self.db.aadd_documents(documents=docs, ids=ids)
+                self._save_db()
+            return ids
+        finally:
+            lock.release()
 
     async def update_documents(self, docs: list[Document]):
-        ids = [doc.metadata["id"] for doc in docs]
-        await self.db.adelete(ids=ids)  # delete originals
-        ins = await self.db.aadd_documents(documents=docs, ids=ids)  # add updated
-        self._save_db()  # persist
-        return ins
+        lock = self._get_write_lock()
+        acquired = lock.acquire(timeout=30)
+        if not acquired:
+            raise RuntimeError("FAISS write lock timeout")
+        try:
+            ids = [doc.metadata["id"] for doc in docs]
+            await self.db.adelete(ids=ids)
+            ins = await self.db.aadd_documents(documents=docs, ids=ids)
+            self._save_db()
+            return ins
+        finally:
+            lock.release()
 
     def _save_db(self):
         Memory._save_db_file(self.db, self.memory_subdir)
 
     def _generate_doc_id(self):
         while True:
-            doc_id = guids.generate_id(10)  # random ID
-            if not self.db.get_by_ids(doc_id):  # check if exists
+            doc_id = guids.generate_id(10)
+            if not self.db.get_by_ids(doc_id):
                 return doc_id
 
     def _find_exact_query_docs(
@@ -527,7 +595,24 @@ class Memory:
     @staticmethod
     def _save_db_file(db: MyFaiss, memory_subdir: str):
         abs_dir = abs_db_dir(memory_subdir)
-        db.save_local(folder_path=abs_dir)
+        # Atomic save: write to temp files then rename
+        try:
+            tmp_dir = tempfile.mkdtemp(dir=os.path.dirname(abs_dir), prefix=".faiss_tmp_")
+            db.save_local(folder_path=tmp_dir)
+            # Rename temp files to final location atomically
+            for fname in ["index.faiss", "index.pkl"]:
+                src = os.path.join(tmp_dir, fname)
+                dst = os.path.join(abs_dir, fname)
+                if os.path.exists(src):
+                    os.replace(src, dst)
+            # Clean up temp dir
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
+        except Exception:
+            # Fallback to non-atomic save if temp approach fails
+            db.save_local(folder_path=abs_dir)
         Memory._write_index_hash(abs_dir)
 
     @staticmethod
