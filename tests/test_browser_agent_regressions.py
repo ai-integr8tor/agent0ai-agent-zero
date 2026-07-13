@@ -3529,3 +3529,112 @@ def test_legacy_browser_dependency_is_removed():
     assert ("browser" + "-use") not in (PROJECT_ROOT / "requirements.txt").read_text(
         encoding="utf-8"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression: issue #723 — browser failures must return clear error messages
+#
+# The removed browser-use agent produced "Task reached step limit without
+# completion. Last page: about:blank" when the underlying LLM provider
+# rejected structured-output headers.  The current Playwright-based tool
+# must return actionable errors instead.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_browser_tool_returns_clear_error_when_runtime_unavailable(monkeypatch):
+    """Browser tool surfaces a clear message when the runtime cannot start.
+
+    Covers the provider-rejection scenario from issue #723 where API errors
+    (e.g. unsupported ``anthropic-beta`` headers, grammar-too-large replies)
+    caused the old browser-use agent to silently exhaust its step budget and
+    return a confusing "about:blank / step limit" message.  The current tool
+    must propagate a human-readable error immediately instead.
+    """
+
+    async def _failing_get_runtime(context_id, create=True, agent=None):
+        raise RuntimeError(
+            "litellm.BadRequestError: structured-outputs-2025-11-13 not supported"
+        )
+
+    monkeypatch.setattr(browser_tool_module, "get_runtime", _failing_get_runtime)
+    tool = browser_tool_module.Browser(
+        agent=SimpleNamespace(context=SimpleNamespace(id="ctx")),
+        name="browser",
+        method=None,
+        args={},
+        message="",
+        loop_data=None,
+    )
+
+    response = await tool.execute(action="open", url="https://example.com")
+
+    assert response.break_loop is False
+    assert "runtime unavailable" in response.message.lower()
+    # Must not reproduce the old vague "step limit / about:blank" wording
+    assert "step limit" not in response.message.lower()
+    assert "about:blank" not in response.message
+
+
+@pytest.mark.anyio
+async def test_browser_action_failure_names_the_failed_action(monkeypatch):
+    """Browser tool identifies the failing action when runtime.call raises.
+
+    Complements test_browser_tool_returns_clear_error_when_runtime_unavailable
+    for the case where the runtime starts successfully but a subsequent call
+    fails (e.g. CDP disconnection, page crash).  The error must name the
+    action so operators can triage without reading raw tracebacks.
+    """
+
+    class _FailingRuntime:
+        async def call(self, method, *args, **kwargs):
+            raise RuntimeError("CDP connection lost")
+
+    async def _ok_get_runtime(context_id, create=True, agent=None):
+        return _FailingRuntime()
+
+    monkeypatch.setattr(browser_tool_module, "get_runtime", _ok_get_runtime)
+    tool = browser_tool_module.Browser(
+        agent=SimpleNamespace(context=SimpleNamespace(id="ctx")),
+        name="browser",
+        method=None,
+        args={},
+        message="",
+        loop_data=None,
+    )
+
+    response = await tool.execute(action="navigate", browser_id=1, url="https://example.com")
+
+    assert response.break_loop is False
+    assert "navigate" in response.message
+    assert "failed" in response.message.lower()
+    assert "step limit" not in response.message.lower()
+    assert "about:blank" not in response.message
+
+
+@pytest.mark.anyio
+async def test_browser_unknown_action_returns_informative_message(monkeypatch):
+    """Unknown action keyword returns an informative error, not a blank failure."""
+
+    class _NeverCalledRuntime:
+        async def call(self, method, *args, **kwargs):
+            raise AssertionError("runtime.call should not be reached for unknown action")
+
+    async def _ok_get_runtime(context_id, create=True, agent=None):
+        return _NeverCalledRuntime()
+
+    monkeypatch.setattr(browser_tool_module, "get_runtime", _ok_get_runtime)
+    tool = browser_tool_module.Browser(
+        agent=SimpleNamespace(context=SimpleNamespace(id="ctx")),
+        name="browser",
+        method=None,
+        args={},
+        message="",
+        loop_data=None,
+    )
+
+    response = await tool.execute(action="nonexistent_action_xyz")
+
+    assert response.break_loop is False
+    assert "nonexistent_action_xyz" in response.message
+    assert "step limit" not in response.message.lower()
