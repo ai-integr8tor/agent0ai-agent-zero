@@ -170,7 +170,7 @@ class FileBrowser:
                 raise ValueError("File exceeds 1 MB and cannot be edited")
 
             full_path = (self.base_dir / file_path).resolve()
-            if not str(full_path).startswith(str(self.base_dir)):
+            if not full_path.is_relative_to(self.base_dir.resolve()):
                 raise ValueError("Invalid path")
             if full_path.exists() and full_path.is_dir():
                 raise ValueError("Target is a directory")
