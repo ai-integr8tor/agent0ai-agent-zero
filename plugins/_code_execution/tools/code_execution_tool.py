@@ -483,7 +483,9 @@ class CodeExecution(Tool):
 
     def fix_full_output(self, output: str):
         output = re.sub(r"(?<!\\)\\x[0-9A-Fa-f]{2}", "", output)
-        output = truncate_text_agent(agent=self.agent, output=output, threshold=1000000)
+        cfg = _get_config(self.agent)
+        max_chars = cfg.get("max_output_chars", 30000)
+        output = truncate_text_agent(agent=self.agent, output=output, threshold=max_chars)
         return output
 
     async def ensure_cwd(self) -> str | None:
@@ -561,6 +563,7 @@ def _get_config(agent) -> dict:
         "output_timeouts": _parse_timeouts(cfg, "output", (120, 60, 600, 5)),
         "prompt_patterns": _parse_patterns(cfg.get("prompt_patterns", "")),
         "dialog_patterns": _parse_patterns(cfg.get("dialog_patterns", ""), re.IGNORECASE),
+        "max_output_chars": int(cfg.get("max_output_chars", 30000)),
     }
 
 
