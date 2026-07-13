@@ -43,7 +43,7 @@ class FileBrowser:
         try:
             # Resolve the target directory path
             target_file = (self.base_dir / current_path / filename).resolve()
-            if not str(target_file).startswith(str(self.base_dir)):
+            if not target_file.is_relative_to(self.base_dir.resolve()):
                 raise ValueError("Invalid target directory")
 
             os.makedirs(target_file.parent, exist_ok=True)
