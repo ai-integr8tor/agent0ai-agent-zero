@@ -142,7 +142,19 @@ class DeferredTask:
                     "The task did not complete within the specified timeout."
                 )
 
-        return await loop.run_in_executor(None, _get_result)
+        try:
+            return await loop.run_in_executor(None, _get_result)
+        except asyncio.CancelledError:
+            # When this coroutine is cancelled by the outer asyncio task
+            # (for example a wall-clock timeout in the caller),
+            # cancellation does NOT propagate into _get_result's blocking
+            # call to self._future.result(timeout). The thread-pool
+            # worker stays parked waiting for the underlying future to
+            # complete, leaking one thread per cancellation. self.kill()
+            # cancels the future and drains the singleton background
+            # event loop so the worker is released.
+            self.kill(terminate_thread=False)
+            raise
 
     def kill(self, terminate_thread: bool = False) -> None:
         """Kill the task and optionally terminate its thread."""
