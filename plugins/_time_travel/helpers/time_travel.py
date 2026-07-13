@@ -189,8 +189,14 @@ def is_inside_usr_display(display_path: str) -> bool:
     return normalized == USR_DISPLAY_ROOT or normalized.startswith(USR_DISPLAY_ROOT + "/")
 
 
-def workspace_id_for(display_path: str) -> str:
+def workspace_id_for(display_path: str, context_id: str = "") -> str:
+    """Generate unique workspace ID. When context_id is provided, creates a
+    per-chat isolated workspace to prevent lock contention between concurrent chats.
+    When context_id is empty, uses the legacy path-only hash for backward compatibility."""
     normalized = canonical_workspace_display_path(display_path).rstrip("/")
+    if context_id:
+        composite = f"{normalized}:{context_id}"
+        return hashlib.sha256(composite.encode("utf-8")).hexdigest()[:32]
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
 
 
@@ -357,7 +363,7 @@ def _resolve_context_workspace(context_id: str = "", *, context_loader=None) -> 
     if not is_inside_usr_display(normalized):
         raise WorkspaceRejectedError("Time Travel is only available for workspaces inside /a0/usr.")
 
-    workspace_id = workspace_id_for(normalized)
+    workspace_id = workspace_id_for(normalized, context_id)
     shadow_display = f"{SHADOW_DISPLAY_ROOT}/{workspace_id}"
     shadow_path = real_path_for_display(shadow_display)
     return WorkspaceInfo(
@@ -421,7 +427,7 @@ def _workspace_from_display(display_path: str, *, project_name: str = "", contex
     normalized = canonical_workspace_display_path(display_path)
     if not is_inside_usr_display(normalized):
         raise WorkspaceRejectedError("Time Travel is only available for workspaces inside /a0/usr.")
-    workspace_id = workspace_id_for(normalized)
+    workspace_id = workspace_id_for(normalized, context_id)
     shadow_path = real_path_for_display(f"{SHADOW_DISPLAY_ROOT}/{workspace_id}")
     return WorkspaceInfo(
         id=workspace_id,
@@ -712,6 +718,71 @@ class TimeTravelService:
     def __init__(self, workspace: WorkspaceInfo):
         self.workspace = workspace
 
+    def _get_contention_engine(self):
+        from plugins._time_travel.helpers.contention_engine import ContentionEngine
+        return ContentionEngine(self.workspace.real_path)
+
+    def _check_contention(
+        self,
+        affected_files: list[dict[str, Any]],
+        target_commit: str,
+    ) -> dict[str, Any] | None:
+        """Check for cross-chat conflicts before restore.
+        Returns a blocked-response dict if conflicts found, None if safe."""
+        file_paths = [
+            item.get("path", "")
+            for item in affected_files
+            if item.get("path")
+        ]
+        if not file_paths:
+            return None
+
+        # Get target commit timestamp
+        try:
+            timestamp = self._git("show", "-s", "--format=%cI", target_commit).stdout.strip()
+        except Exception:
+            timestamp = ""
+
+        engine = self._get_contention_engine()
+        report = engine.check_contention(
+            workspace_id=self.workspace.id,
+            files_to_restore=file_paths,
+            source_snapshot_timestamp=timestamp,
+        )
+
+        if report.is_safe:
+            return None
+
+        summary = engine.generate_restore_summary(report, file_paths)
+        return {
+            "ok": False,
+            "operation": "blocked",
+            "error": "Restore blocked: file contention detected",
+            "contention_report": report.to_dict(),
+            "contention_summary": summary,
+            "affected_files": affected_files,
+            "hint": "Use force=True to override (not recommended for system files)",
+        }
+
+    def _update_file_ownership(self, affected_files: list[dict[str, Any]]) -> None:
+        """Update file ownership records after snapshot or restore."""
+        file_paths = [
+            item.get("path", "")
+            for item in affected_files
+            if item.get("path")
+        ]
+        if not file_paths:
+            return
+        try:
+            engine = self._get_contention_engine()
+            engine.update_ownership(
+                workspace_id=self.workspace.id,
+                context_id=self.workspace.context_id,
+                files_changed=file_paths,
+            )
+        except Exception:
+            pass  # Non-critical: ownership tracking is best-effort
+
     def ensure_repo(self) -> None:
         self.workspace.shadow_path.mkdir(parents=True, exist_ok=True)
         if not self._shadow_repo_valid():
@@ -876,13 +947,23 @@ class TimeTravelService:
         self._ensure_workspace_dir()
         self.ensure_repo()
         target = self._validate_commit(commit_hash)
+
+        # Cross-chat contention check
+        affected = self.diff_files(self.current_hash() or EMPTY_TREE, target)
+        contention = self._check_contention(affected, target)
+        if contention:
+            return contention
+
         before = self.snapshot(trigger="before_travel", metadata=metadata or {})
         previous = self.current_hash()
         if previous:
             self._preserve_ref(previous, reason="travel")
-        affected = self.diff_files(previous or EMPTY_TREE, target)
         self._apply_commit_tree(previous or EMPTY_TREE, target, affected)
         self._git("update-ref", "HEAD", target)
+
+        # Update file ownership after restore
+        self._update_file_ownership(affected)
+
         return {
             "ok": True,
             "operation": "travel",
@@ -1549,6 +1630,95 @@ def _snapshot_public(snapshot: SnapshotResult) -> dict[str, Any]:
         "message": snapshot.message,
         "files": snapshot.files,
         "metadata": snapshot.metadata,
+    }
+
+
+def list_all_workspaces(display_path: str = "") -> list[dict[str, Any]]:
+    """List all per-chat shadow workspaces for a given display path.
+    Used to provide a global view across all chat sessions.
+    When display_path is empty, lists all workspaces."""
+    shadow_root = real_path_for_display(SHADOW_DISPLAY_ROOT)
+    if not shadow_root.exists():
+        return []
+
+    results: list[dict[str, Any]] = []
+    for ws_dir in sorted(shadow_root.iterdir()):
+        if not ws_dir.is_dir():
+            continue
+        repo_git = ws_dir / "repo.git"
+        if not repo_git.exists():
+            continue
+
+        workspace = WorkspaceInfo(
+            id=ws_dir.name,
+            display_path="",
+            real_path=Path(""),
+            shadow_path=ws_dir,
+            repo_git_path=repo_git,
+        )
+        try:
+            service = TimeTravelService(workspace)
+            service.ensure_repo()
+            current = service.current_hash()
+            history = service.history_list(limit=1)
+            commits = history.get("commits", [])
+            latest = commits[0] if commits else None
+            if latest:
+                results.append({
+                    "workspace_id": ws_dir.name,
+                    "latest_hash": current[:12] if current else "",
+                    "latest_message": latest.get("message", ""),
+                    "latest_timestamp": latest.get("timestamp", ""),
+                    "total_commits": len(service._rev_list_all()),
+                    "context_id": latest.get("metadata", {}).get("context_id", ""),
+                })
+        except Exception:
+            continue
+
+    return results
+
+
+def aggregate_history(
+    display_path: str = "",
+    *,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Aggregate snapshots across all chat workspaces into a unified timeline.
+    Provides the 'restore everything' global view."""
+    workspaces = list_all_workspaces(display_path)
+    all_commits: list[dict[str, Any]] = []
+
+    for ws_info in workspaces:
+        workspace = WorkspaceInfo(
+            id=ws_info["workspace_id"],
+            display_path="",
+            real_path=Path(""),
+            shadow_path=real_path_for_display(f"{SHADOW_DISPLAY_ROOT}/{ws_info['workspace_id']}"),
+            repo_git_path=real_path_for_display(f"{SHADOW_DISPLAY_ROOT}/{ws_info['workspace_id']}/repo.git"),
+        )
+        try:
+            service = TimeTravelService(workspace)
+            service.ensure_repo()
+            current = service.current_hash()
+            hashes = service._rev_list_all()
+            for h in hashes:
+                obj = service.commit_object(h, current_hash=current)
+                obj["workspace_id"] = ws_info["workspace_id"]
+                obj["context_id"] = ws_info.get("context_id", "")
+                all_commits.append(obj)
+        except Exception:
+            continue
+
+    all_commits.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+    window = all_commits[offset: offset + limit + 1]
+    visible = window[:limit]
+    return {
+        "ok": True,
+        "total": len(all_commits),
+        "commits": visible,
+        "has_more": len(window) > limit,
+        "workspaces": workspaces,
     }
 
 
