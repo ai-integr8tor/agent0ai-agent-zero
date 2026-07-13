@@ -42,6 +42,11 @@ chat:
       endpoint_url: "https://api.anthropic.com/v1/models"
       params:
         limit: "1000"
+  avian:
+    name: Avian
+    litellm_provider: openai
+    kwargs:
+      api_base: https://api.avian.io/v1
   cometapi:
     name: CometAPI
     litellm_provider: cometapi
