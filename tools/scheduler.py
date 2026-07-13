@@ -342,6 +342,8 @@ class SchedulerTool(Tool):
             project_color=project_color,
         )
         await TaskScheduler.get().add_task(task)
+        # Capture originating chat for cross-thread provenance
+        task.source_chat = self.agent.context.id
         return Response(message=f"Scheduled task '{name}' created: {task.uuid}", break_loop=False)
 
     async def create_adhoc_task(self, **kwargs) -> Response:
@@ -365,6 +367,8 @@ class SchedulerTool(Tool):
             project_color=project_color,
         )
         await TaskScheduler.get().add_task(task)
+        # Capture originating chat for cross-thread provenance
+        task.source_chat = self.agent.context.id
         return Response(message=f"Adhoc task '{name}' created: {task.uuid}", break_loop=False)
 
     async def create_planned_task(self, **kwargs) -> Response:
@@ -394,6 +398,8 @@ class SchedulerTool(Tool):
             project_color=project_color
         )
         await TaskScheduler.get().add_task(task)
+        # Capture originating chat for cross-thread provenance
+        task.source_chat = self.agent.context.id
         return Response(message=f"Planned task '{name}' created: {task.uuid}", break_loop=False)
 
     async def wait_for_task(self, **kwargs) -> Response:

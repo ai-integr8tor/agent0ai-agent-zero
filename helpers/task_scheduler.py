@@ -162,6 +162,7 @@ class TaskPlan(BaseModel):
 class BaseTask(BaseModel):
     uuid: str = Field(default_factory=lambda: guids.generate_id())
     context_id: Optional[str] = Field(default=None)
+    source_chat: Optional[str] = Field(default=None)  # Originating chat thread ID
     state: TaskState = Field(default=TaskState.IDLE)
     name: str = Field()
     system_prompt: str
