@@ -453,6 +453,11 @@ def _load_sensitive_settings(settings: Settings):
         if api_key and api_key != "None":
             settings["api_keys"][provider_name] = api_key
 
+    # load Olostep API key
+    olostep_key = models.get_api_key("olostep")
+    if olostep_key and olostep_key != "None":
+        settings["api_keys"]["olostep"] = olostep_key
+
     # load auth fields from .env
     settings["auth_login"] = dotenv.get_dotenv_value(dotenv.KEY_AUTH_LOGIN) or ""
     settings["auth_password"] = dotenv.get_dotenv_value(dotenv.KEY_AUTH_PASSWORD) or ""
