@@ -673,9 +673,46 @@ class ResponsesTransport:
         request = cls.prepare_kwargs(kwargs, stop=stop, model=model, messages=messages)
         state = _normalize_responses_state(kwargs.get("responses_state"))
         input_items = cls._select_input_items(kwargs, messages, state)
-        request["input"] = input_items or ""
+        request["input"] = cls._sanitize_input_items(input_items) or ""
         cls.apply_state(request, kwargs, state=state)
         return request
+
+    @staticmethod
+    def _sanitize_input_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strip function_call_output items that have no matching function_call.
+
+        History compression or context truncation can leave orphaned
+        function_call_output items in the request — the matching function_call
+        was summarised away but the tool result message survived.  Strict
+        providers (MiniMax, Anthropic, …) reject the request with
+        'tool id not found'.  This guard drops the orphaned outputs so the
+        remaining (valid) items can still be sent.
+        """
+        if not items:
+            return items
+
+        call_ids = {
+            str(item.get("call_id") or item.get("id") or "")
+            for item in items
+            if isinstance(item, dict) and item.get("type") == "function_call"
+        }
+
+        if not call_ids:
+            # No function_calls at all — strip ALL function_call_outputs
+            return [
+                item for item in items
+                if not (isinstance(item, dict) and item.get("type") == "function_call_output")
+            ]
+
+        # Keep only outputs whose call_id matches a present function_call
+        return [
+            item for item in items
+            if not (
+                isinstance(item, dict)
+                and item.get("type") == "function_call_output"
+                and str(item.get("call_id") or "") not in call_ids
+            )
+        ]
 
     @classmethod
     def from_input(
